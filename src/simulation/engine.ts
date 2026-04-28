@@ -1,6 +1,8 @@
 import { atomData } from "../data/atoms";
-import type { AtomParticle, AtomSymbol, Bond, ElectronEffect, MetallicElectron, MoleculePreset, SimulationSettings, SimulationState } from "../types";
+import type { AtomParticle, AtomSymbol, Bond, ElectronEffect, HydrogenBond, MetallicElectron, MoleculePreset, SimulationSettings, SimulationState } from "../types";
 import { applyIonCharges, canBond, classifyBond, eventForBond, makeBond } from "./chemistry";
+import { applyMolecularRelaxation } from "./relaxation";
+import { applyVsepr3DTargets } from "./vsepr3d";
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -13,8 +15,10 @@ export function createAtom(symbol: AtomSymbol, x: number, y: number, guided = fa
     symbol,
     x,
     y,
+    z: 0,
     vx: rand(-24, 24),
     vy: rand(-24, 24),
+    vz: 0,
     radius: clamp(atom.covalentRadius * 0.34, 18, 34),
     charge: 0,
     bonds: [],
@@ -27,6 +31,7 @@ export function createFreeState(width: number, height: number, settings: Simulat
   return {
     atoms,
     bonds: [],
+    hydrogenBonds: [],
     effects: [],
     metallicElectrons: [],
     events: [],
@@ -51,6 +56,7 @@ export function createPresetState(width: number, height: number, preset: Molecul
     const particle = createAtom(atom.symbol, cx + atom.x * 1.15 + rand(-8, 8), cy + atom.y * 1.15 + rand(-8, 8), true);
     particle.targetX = cx + atom.x;
     particle.targetY = cy + atom.y;
+    particle.targetZ = 0;
     particle.vx = (particle.targetX - particle.x) * 0.12 + rand(-8, 8);
     particle.vy = (particle.targetY - particle.y) * 0.12 + rand(-8, 8);
     particle.id = `${atom.symbol}-${preset.id}-${index}`;
@@ -69,6 +75,35 @@ export function createPresetState(width: number, height: number, preset: Molecul
     : [];
 
   const bonds: Bond[] = [];
+  if (preset.bonds?.length) {
+    for (const presetBond of preset.bonds) {
+      const a = atoms[presetBond.a];
+      const b = atoms[presetBond.b];
+      if (!a || !b) continue;
+      const kind = presetBond.kind ?? classifyBond(a.symbol, b.symbol, 1);
+      const atomA = atomData[a.symbol];
+      const atomB = atomData[b.symbol];
+      const targetDistance = Math.hypot((a.targetX ?? a.x) - (b.targetX ?? b.x), (a.targetY ?? a.y) - (b.targetY ?? b.y));
+      const polarity = Math.abs(atomA.electronegativity - atomB.electronegativity);
+      const electronShift = atomA.electronegativity === atomB.electronegativity
+        ? undefined
+        : atomA.electronegativity > atomB.electronegativity ? a.id : b.id;
+
+      bonds.push({
+        id: `preset-bond-${preset.id}-${presetBond.a}-${presetBond.b}`,
+        a: a.id,
+        b: b.id,
+        kind,
+        order: kind === "ionic" ? 1 : presetBond.order ?? 1,
+        strength: kind === "ionic" ? 0.08 : 0.14 + (presetBond.order ?? 1) * 0.04,
+        length: targetDistance || Math.max(78, (atomA.covalentRadius + atomB.covalentRadius) * 0.86),
+        formedAt: 0,
+        polarity,
+        electronShift
+      });
+    }
+  }
+
   if (preset.metallic) {
     for (let i = 0; i < atoms.length; i += 1) {
       for (let j = i + 1; j < atoms.length; j += 1) {
@@ -94,6 +129,7 @@ export function createPresetState(width: number, height: number, preset: Molecul
   return {
     atoms,
     bonds,
+    hydrogenBonds: [],
     effects: preset.metallic ? [{ id: "delocalized", from: atoms[0]?.id ?? "", to: atoms[1]?.id ?? "", progress: 0, kind: "delocalized" }] : [],
     metallicElectrons,
     events: [{
@@ -111,7 +147,10 @@ export function createPresetState(width: number, height: number, preset: Molecul
 }
 
 export function stepSimulation(state: SimulationState, settings: SimulationSettings, width: number, height: number, rawDt: number): SimulationState {
-  const dt = Math.min(0.04, rawDt * settings.speed);
+  const dt = Math.min(0.04, rawDt * settings.speed * (settings.geometry3D ? 0.35 : 1));
+  const thermalMotion = settings.geometry3D ? settings.temperature * 0.05 : settings.temperature;
+  const collisionStrength = settings.geometry3D ? settings.collisionStrength * 0.08 : settings.collisionStrength;
+  const motionScale = settings.geometry3D ? 10 : 24 + settings.temperature * 8;
   const atoms = state.atoms.map((atom) => ({ ...atom, bonds: [] as string[] }));
   const bonds = state.bonds.map((bond) => ({ ...bond }));
   const effects = state.effects
@@ -125,18 +164,28 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     atoms[indexById.get(bond.b)!]?.bonds.push(bond.id);
   }
 
+  if (settings.geometry3D) {
+    applyVsepr3DTargets(atoms, bonds);
+  }
+
   for (const atom of atoms) {
     if (atom.guided && atom.targetX !== undefined && atom.targetY !== undefined) {
       atom.vx += (atom.targetX - atom.x) * 0.34 * dt;
       atom.vy += (atom.targetY - atom.y) * 0.34 * dt;
+      if (settings.geometry3D && atom.targetZ !== undefined) {
+        atom.vz = (atom.vz ?? 0) + (atom.targetZ - (atom.z ?? 0)) * 0.34 * dt;
+      }
     } else {
-      atom.vx += rand(-1, 1) * settings.temperature * 8 * dt;
-      atom.vy += rand(-1, 1) * settings.temperature * 8 * dt;
+      atom.vx += rand(-1, 1) * thermalMotion * 8 * dt;
+      atom.vy += rand(-1, 1) * thermalMotion * 8 * dt;
+      atom.vz = (atom.vz ?? 0) + rand(-1, 1) * thermalMotion * 1.8 * dt;
     }
-    atom.vx *= 0.996;
-    atom.vy *= 0.996;
-    atom.x += atom.vx * dt * (24 + settings.temperature * 8);
-    atom.y += atom.vy * dt * (24 + settings.temperature * 8);
+    atom.vx *= settings.geometry3D ? 0.94 : 0.996;
+    atom.vy *= settings.geometry3D ? 0.94 : 0.996;
+    atom.vz = (atom.vz ?? 0) * (settings.geometry3D ? 0.9 : 0.992);
+    atom.x += atom.vx * dt * motionScale;
+    atom.y += atom.vy * dt * motionScale;
+    atom.z = settings.geometry3D ? (atom.z ?? 0) + (atom.vz ?? 0) * dt * motionScale : 0;
     if (atom.x < atom.radius + 8 || atom.x > width - atom.radius - 8) {
       atom.vx *= -0.88;
       atom.x = clamp(atom.x, atom.radius + 8, width - atom.radius - 8);
@@ -145,6 +194,7 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
       atom.vy *= -0.88;
       atom.y = clamp(atom.y, atom.radius + 8, height - atom.radius - 8);
     }
+    atom.z = clamp(atom.z ?? 0, -160, 160);
   }
 
   for (const bond of bonds) {
@@ -177,6 +227,8 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.max(0.01, Math.hypot(dx, dy));
+      const dz = (b.z ?? 0) - (a.z ?? 0);
+      const formationDistance = settings.geometry3D ? Math.hypot(dx, dy, dz * 0.55) : dist;
       const minDist = a.radius + b.radius + 10;
       if (dist < minDist && !bonds.some((bond) => (bond.a === a.id && bond.b === b.id) || (bond.a === b.id && bond.b === a.id))) {
         const nx = dx / dist;
@@ -186,14 +238,14 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
         a.y -= ny * overlap;
         b.x += nx * overlap;
         b.y += ny * overlap;
-        a.vx -= nx * settings.collisionStrength * 18;
-        a.vy -= ny * settings.collisionStrength * 18;
-        b.vx += nx * settings.collisionStrength * 18;
-        b.vy += ny * settings.collisionStrength * 18;
+        a.vx -= nx * collisionStrength * 18;
+        a.vy -= ny * collisionStrength * 18;
+        b.vx += nx * collisionStrength * 18;
+        b.vy += ny * collisionStrength * 18;
       }
 
-      const bondingRange = (a.radius + b.radius) * settings.bondingDistance;
-      if (!state.metallicLattice && dist < bondingRange && canBond(a, b, bonds, settings)) {
+      const bondingRange = (a.radius + b.radius) * settings.bondingDistance * (settings.geometry3D ? 1.18 : 1);
+      if (!state.metallicLattice && formationDistance < bondingRange && canBond(a, b, bonds, settings)) {
         const bond = makeBond(a, b, state.time, settings);
         bonds.push(bond);
         a.bonds.push(bond.id);
@@ -211,6 +263,8 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     }
   }
 
+  applyMolecularRelaxation(atoms, bonds, settings, dt);
+
   const metallicElectrons = state.metallicElectrons.map((electron) => {
     const next = { ...electron };
     next.x += next.vx * dt;
@@ -220,14 +274,49 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     if (next.y < pad || next.y > height - pad) next.vy *= -1;
     return next;
   });
+  const hydrogenBonds = state.metallicLattice ? [] : findHydrogenBonds(atoms, bonds);
 
   return {
     ...state,
     atoms,
     bonds,
+    hydrogenBonds,
     effects,
     metallicElectrons,
     events: events.slice(0, 8),
     time: state.time + dt
   };
+}
+
+function findHydrogenBonds(atoms: AtomParticle[], bonds: Bond[]): HydrogenBond[] {
+  const atomById = new Map(atoms.map((atom) => [atom.id, atom]));
+  const structuralBonds = bonds.filter((bond) => bond.kind !== "hydrogen" && bond.kind !== "dispersion");
+  const hBonds: HydrogenBond[] = [];
+  const acceptors = atoms.filter((atom) => ["O", "N", "F"].includes(atom.symbol) && atom.charge <= 0);
+
+  for (const hydrogen of atoms.filter((atom) => atom.symbol === "H")) {
+    const donorBond = structuralBonds.find((bond) => bond.a === hydrogen.id || bond.b === hydrogen.id);
+    if (!donorBond) continue;
+    const donorId = donorBond.a === hydrogen.id ? donorBond.b : donorBond.a;
+    const donor = atomById.get(donorId);
+    if (!donor || !["O", "N", "F"].includes(donor.symbol)) continue;
+
+    for (const acceptor of acceptors) {
+      if (acceptor.id === donor.id) continue;
+      if (structuralBonds.some((bond) => (bond.a === hydrogen.id && bond.b === acceptor.id) || (bond.b === hydrogen.id && bond.a === acceptor.id))) continue;
+      const distance = Math.hypot(acceptor.x - hydrogen.x, acceptor.y - hydrogen.y);
+      if (distance > 68 && distance < 190) {
+        hBonds.push({
+          id: `hbond-${hydrogen.id}-${acceptor.id}`,
+          hydrogen: hydrogen.id,
+          donor: donor.id,
+          acceptor: acceptor.id,
+          distance,
+          strength: Math.max(0, 1 - (distance - 68) / 122)
+        });
+      }
+    }
+  }
+
+  return hBonds.sort((a, b) => b.strength - a.strength).slice(0, 12);
 }

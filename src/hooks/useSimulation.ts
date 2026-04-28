@@ -16,8 +16,12 @@ export const defaultSettings: SimulationSettings = {
   zoom: 1,
   theme: "light",
   visualStyle: "detailed",
+  projectionMode: "soft-perspective",
   showShells: true,
   showLabels: true,
+  geometryAssist: true,
+  geometry3D: false,
+  relaxationStrength: 0.74,
   advanced: false,
   selectedElements: ["H", "O", "C", "N", "Na", "Cl"]
 };
@@ -31,6 +35,7 @@ export function useSimulation() {
   const [state, setState] = useState<SimulationState>(() => createFreeState(defaultSize.width, defaultSize.height, defaultSettings));
   const frame = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
+  const loadedSharedScene = useRef(false);
 
   const resetFree = useCallback((nextSettings = settings) => {
     setActivePreset(null);
@@ -47,6 +52,7 @@ export function useSimulation() {
         ...base,
         atoms: [...base.atoms, ...spawned],
         bonds: base.metallicLattice ? [] : base.bonds,
+        hydrogenBonds: [],
         effects: base.metallicLattice ? [] : base.effects,
         metallicElectrons: [],
         selectedAtomId: spawned[0]?.id ?? base.selectedAtomId,
@@ -71,6 +77,47 @@ export function useSimulation() {
     setState(createPresetState(size.width, size.height, preset));
     setIsRunning(true);
   }, [size.height, size.width]);
+
+  const loadMoleculePreset = useCallback((preset: MoleculePreset, nextMode: AppMode = "presets") => {
+    setMode(nextMode);
+    setActivePreset(preset);
+    setState(createPresetState(size.width, size.height, preset));
+    setIsRunning(true);
+  }, [size.height, size.width]);
+
+  useEffect(() => {
+    if (loadedSharedScene.current) return;
+    loadedSharedScene.current = true;
+    const match = window.location.hash.match(/scene=([^&]+)/);
+    if (!match) return;
+    try {
+      const payload = JSON.parse(decodeURIComponent(escape(window.atob(match[1])))) as {
+        settings?: Partial<SimulationSettings>;
+        atoms?: Array<Pick<AtomParticle, "id" | "symbol" | "x" | "y" | "z" | "vx" | "vy" | "vz" | "radius" | "charge" | "bonds">>;
+      };
+      if (payload.settings) {
+        setSettings((current) => ({ ...current, ...payload.settings, atomCount: 1 }));
+      }
+      if (payload.atoms?.length) {
+        setMode("free");
+        setActivePreset(null);
+        setState((current) => ({
+          ...createFreeState(size.width, size.height, settings),
+          time: current.time,
+          atoms: payload.atoms!.map((atom) => ({ ...atom, bonds: [], guided: false })),
+          events: [{
+            id: `shared-${Date.now()}`,
+            time: current.time,
+            title: "Shared scene loaded",
+            plain: "A shared atom scene was restored from the URL.",
+            science: "The share link stores atom positions and visual settings. Bonds reform through the simulation rules after loading."
+          }]
+        }));
+      }
+    } catch {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, [settings, size.height, size.width]);
 
   useEffect(() => {
     if (activePreset) {
@@ -98,6 +145,7 @@ export function useSimulation() {
 
   const updateSetting = <K extends keyof SimulationSettings>(key: K, value: SimulationSettings[K]) => {
     setSettings((current) => ({ ...current, [key]: value }));
+    if (key === "geometry3D" && value === true) setIsRunning(true);
   };
 
   const setCanvasSize = useCallback((width: number, height: number) => {
@@ -163,6 +211,7 @@ export function useSimulation() {
         ...current,
         atoms,
         bonds: remainingBonds,
+        hydrogenBonds: current.hydrogenBonds.filter((bond) => !affectedAtomIds.has(bond.hydrogen) && !affectedAtomIds.has(bond.acceptor)),
         effects: current.effects.filter((effect) => !overstretched.some((bond) => effect.id.includes(bond.id) || effect.from === bond.a && effect.to === bond.b || effect.from === bond.b && effect.to === bond.a)),
         selectedBondId: brokenIds.has(current.selectedBondId ?? "") ? null : current.selectedBondId,
         selectedAtomId: atomId,
@@ -213,6 +262,58 @@ export function useSimulation() {
     }
   };
 
+  const shareScene = useCallback(async () => {
+    const payload = {
+      settings: {
+        theme: settings.theme,
+        visualStyle: settings.visualStyle,
+        projectionMode: settings.projectionMode,
+        showShells: settings.showShells,
+        showLabels: settings.showLabels,
+        geometryAssist: settings.geometryAssist,
+        geometry3D: settings.geometry3D,
+        relaxationStrength: settings.relaxationStrength,
+        selectedElements: settings.selectedElements,
+        zoom: settings.zoom
+      },
+      atoms: state.atoms.map((atom) => ({
+        id: atom.id,
+        symbol: atom.symbol,
+        x: Math.round(atom.x),
+        y: Math.round(atom.y),
+        z: Math.round(atom.z ?? 0),
+        vx: 0,
+        vy: 0,
+        vz: 0,
+        radius: atom.radius,
+        charge: atom.charge,
+        bonds: []
+      }))
+    };
+    const encoded = window.btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    const url = `${window.location.origin}${window.location.pathname}#scene=${encoded}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        window.prompt("Copy this scene link:", url);
+      }
+    } catch {
+      window.prompt("Copy this scene link:", url);
+    }
+    setState((current) => ({
+      ...current,
+      events: [{
+        id: `share-${Date.now()}`,
+        time: current.time,
+        title: "Scene link copied",
+        plain: "A shareable link for this scene was copied to the clipboard.",
+        science: "The link encodes atom positions and view settings in the URL hash so the browser can restore the scene locally."
+      }, ...current.events].slice(0, 8)
+    }));
+    return url;
+  }, [settings, state.atoms]);
+
   return {
     mode,
     setMode,
@@ -228,6 +329,8 @@ export function useSimulation() {
     selectedMolecule,
     activePreset,
     loadPreset,
+    loadMoleculePreset,
+    shareScene,
     spawnFreeAtoms,
     resetFree,
     reset,

@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Gauge, Palette, Plus, SlidersHorizontal, Sparkles, ZoomIn } from "lucide-react";
+import { Box, Eye, EyeOff, Gauge, Orbit, Palette, Plus, Share2, SlidersHorizontal, Sparkles, ZoomIn } from "lucide-react";
 import type { CSSProperties } from "react";
 import { atomData, elementGroups } from "../data/atoms";
 import type { AtomSymbol, SimulationSettings } from "../types";
@@ -7,9 +7,10 @@ type Props = {
   settings: SimulationSettings;
   onSetting: <K extends keyof SimulationSettings>(key: K, value: SimulationSettings[K]) => void;
   onSpawnAtoms: () => void;
+  onShareScene: () => void;
 };
 
-export function ControlDock({ settings, onSetting, onSpawnAtoms }: Props) {
+export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }: Props) {
   const toggleElement = (symbol: AtomSymbol) => {
     const exists = settings.selectedElements.includes(symbol);
     const next = exists
@@ -30,6 +31,7 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms }: Props) {
         <Slider label="Collision" title="How strongly atoms bounce when they do not bond." value={settings.collisionStrength} min={0.2} max={1.4} step={0.05} onChange={(value) => onSetting("collisionStrength", value)} />
         <Slider label="EN difference" title="Emphasizes electronegativity difference when classifying bonds." value={settings.electronegativityEmphasis} min={0.7} max={1.5} step={0.05} onChange={(value) => onSetting("electronegativityEmphasis", value)} />
         <Slider label="Bond distance" title="How close atoms must be before bond rules are tested." value={settings.bondingDistance} min={1.45} max={2.8} step={0.05} onChange={(value) => onSetting("bondingDistance", value)} />
+        <Slider label="Relaxation" title="How strongly VSEPR angles, bond lengths, and atom spacing settle the molecule." value={settings.relaxationStrength} min={0} max={1.2} step={0.05} onChange={(value) => onSetting("relaxationStrength", value)} />
         <Slider label="Zoom" title="Scale the simulation viewport without changing the chemistry." value={settings.zoom} min={0.55} max={2.2} step={0.05} onChange={(value) => onSetting("zoom", value)} />
       </div>
       <div className="element-board" aria-label="Choose atom types by group">
@@ -60,6 +62,10 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms }: Props) {
           <Plus size={16} />
           Spawn one atom
         </button>
+        <button className="spawn-button" title="Copy a shareable link for the current scene" onClick={onShareScene}>
+          <Share2 size={16} />
+          Share scene
+        </button>
       </div>
       <div className="visual-row" aria-label="Visual model">
         <button className={settings.visualStyle === "detailed" ? "visual-choice active" : "visual-choice"} title="Detailed model with shaded atoms and glow effects" onClick={() => onSetting("visualStyle", "detailed")}>
@@ -74,6 +80,19 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms }: Props) {
           Color
         </button>
       </div>
+      {settings.geometry3D && (
+        <div className="projection-row" aria-label="3D projection">
+          <button className={settings.projectionMode === "orthographic" ? "visual-choice active" : "visual-choice"} title="Flatten depth for a clean structural comparison" onClick={() => onSetting("projectionMode", "orthographic")}>
+            Ortho
+          </button>
+          <button className={settings.projectionMode === "soft-perspective" ? "visual-choice active" : "visual-choice"} title="Use gentle perspective depth for stable 3D viewing" onClick={() => onSetting("projectionMode", "soft-perspective")}>
+            Soft
+          </button>
+          <button className={settings.projectionMode === "deep-perspective" ? "visual-choice active" : "visual-choice"} title="Use stronger perspective for clearer front-to-back depth" onClick={() => onSetting("projectionMode", "deep-perspective")}>
+            Deep
+          </button>
+        </div>
+      )}
       <div className="toggle-row">
         <button className={settings.showShells ? "toggle active" : "toggle"} title="Show or hide electron shells" onClick={() => onSetting("showShells", !settings.showShells)}>
           {settings.showShells ? <Eye size={16} /> : <EyeOff size={16} />}
@@ -86,6 +105,14 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms }: Props) {
         <button className={settings.advanced ? "toggle active" : "toggle"} title="Switch between plain and deeper explanation text" onClick={() => onSetting("advanced", !settings.advanced)}>
           <Gauge size={16} />
           Advanced
+        </button>
+        <button className={settings.geometryAssist ? "toggle active" : "toggle"} title="Use VSEPR angle targets and relaxation forces to settle molecule shapes" onClick={() => onSetting("geometryAssist", !settings.geometryAssist)}>
+          <Orbit size={16} />
+          Geometry
+        </button>
+        <button className={settings.geometry3D ? "toggle active" : "toggle"} title="Project VSEPR geometry with depth for tetrahedral and other 3D shapes" onClick={() => onSetting("geometry3D", !settings.geometry3D)}>
+          <Box size={16} />
+          3D
         </button>
         <button className="toggle" title="Reset zoom to the default view" onClick={() => onSetting("zoom", 1)}>
           <ZoomIn size={16} />

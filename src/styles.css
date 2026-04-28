@@ -27,6 +27,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
 .app-shell {
   min-height: 100vh;
   padding: 18px;
@@ -127,6 +132,8 @@ button {
 .icon-button,
 .toggle,
 .spawn-button,
+.builder-button,
+.builder-result,
 .preset,
 .lesson {
   border: 1px solid transparent;
@@ -139,6 +146,8 @@ button {
 .app-shell.light .icon-button,
 .app-shell.light .toggle,
 .app-shell.light .spawn-button,
+.app-shell.light .builder-button,
+.app-shell.light .builder-result,
 .app-shell.light .preset,
 .app-shell.light .lesson {
   color: #20302a;
@@ -186,6 +195,8 @@ button {
 .icon-button:hover,
 .toggle:hover,
 .spawn-button:hover,
+.builder-button:hover,
+.builder-result:hover,
 .preset:hover,
 .lesson:hover {
   border-color: rgba(94, 234, 212, 0.42);
@@ -227,6 +238,14 @@ button {
   cursor: grabbing;
 }
 
+.molecule-3d-wrap {
+  touch-action: none;
+}
+
+.molecule-3d-canvas {
+  cursor: grab;
+}
+
 .canvas-readout {
   position: absolute;
   left: 14px;
@@ -237,6 +256,9 @@ button {
 }
 
 .canvas-readout span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 7px 10px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
@@ -403,6 +425,7 @@ button {
 
 .element-board,
 .visual-row,
+.projection-row,
 .toggle-row {
   display: flex;
   flex-wrap: wrap;
@@ -460,6 +483,7 @@ button {
 }
 
 .spawn-button,
+.builder-button,
 .visual-choice,
 .toggle {
   display: inline-flex;
@@ -481,7 +505,114 @@ button {
   background: #5eead4;
 }
 
-.visual-row {
+.molecule-builder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.builder-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #a7f3d0;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.builder-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #eef5f1;
+  background: transparent;
+}
+
+.builder-search input::placeholder {
+  color: #8c9a94;
+}
+
+.builder-button {
+  color: #071412;
+  border-color: transparent;
+  background: #5eead4;
+}
+
+.builder-message {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
+  color: #fbbf24;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.builder-message.success {
+  color: #99f6e4;
+}
+
+.app-shell.light .builder-message.success {
+  color: #047857;
+}
+
+.builder-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.builder-result {
+  min-height: 52px;
+  padding: 9px 10px;
+  border-color: rgba(94, 234, 212, 0.18);
+  border-radius: 8px;
+  text-align: left;
+  background: rgba(20, 184, 166, 0.09);
+}
+
+.builder-result.pubchem {
+  border-color: rgba(56, 189, 248, 0.2);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.builder-result strong,
+.builder-result span {
+  display: block;
+}
+
+.builder-result strong {
+  color: #f8fafc;
+  font-size: 0.94rem;
+  overflow-wrap: anywhere;
+}
+
+.builder-result span {
+  margin-top: 2px;
+  color: #a7b2ad;
+  font-size: 0.76rem;
+}
+
+.builder-result.active {
+  border-color: rgba(94, 234, 212, 0.62);
+  background: rgba(20, 184, 166, 0.18);
+}
+
+.builder-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #a7b2ad;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.visual-row,
+.projection-row {
   align-items: center;
 }
 
@@ -530,6 +661,9 @@ button {
 }
 
 .app-shell.light .spawn-button,
+.app-shell.light .builder-search,
+.app-shell.light .builder-button,
+.app-shell.light .builder-result,
 .app-shell.light .toggle,
 .app-shell.light .element-picker button {
   border-color: rgba(24, 34, 30, 0.1);
@@ -560,6 +694,35 @@ button {
 .app-shell.light .spawn-button.primary {
   color: #06251f;
   background: #2dd4bf;
+}
+
+.app-shell.light .builder-search input {
+  color: #20302a;
+}
+
+.app-shell.light .builder-button {
+  color: #06251f;
+  background: #2dd4bf;
+}
+
+.app-shell.light .builder-result {
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.app-shell.light .builder-result.pubchem {
+  background: rgba(14, 165, 233, 0.08);
+}
+
+.app-shell.light .builder-result strong {
+  color: #18221e;
+}
+
+.app-shell.light .builder-result span {
+  color: #61706a;
+}
+
+.app-shell.light .builder-hint {
+  color: #61706a;
 }
 
 .preset-grid {
@@ -604,6 +767,7 @@ button {
 .app-shell.light .lesson strong,
 .app-shell.light .lesson-steps,
 .app-shell.light .plain-text,
+.app-shell.light .meter-block span,
 .app-shell.light .explanation p,
 .app-shell.light .event-list p,
 .app-shell.light .compact p,
@@ -737,7 +901,8 @@ button {
 }
 
 .app-shell.light .fact-grid dd,
-.app-shell.light .explanation strong {
+.app-shell.light .explanation strong,
+.app-shell.light .meter-block strong {
   color: #20302a;
 }
 
@@ -749,6 +914,66 @@ button {
   color: #b7c3be;
   font-size: 0.9rem;
   line-height: 1.55;
+}
+
+.meter-block {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid rgba(20, 184, 166, 0.16);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, 0.07);
+}
+
+.meter-block > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.meter-block span {
+  color: #99a7a1;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.meter-block strong {
+  color: #dffcf5;
+  font-size: 0.78rem;
+}
+
+.meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2dd4bf, #a7f3d0);
+}
+
+.meter-block.danger {
+  border-color: rgba(251, 146, 60, 0.2);
+  background: rgba(251, 146, 60, 0.08);
+}
+
+.meter-block.danger i {
+  background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+}
+
+.app-shell.light .meter-block {
+  border-color: rgba(20, 184, 166, 0.18);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.app-shell.light .meter {
+  background: rgba(24, 34, 30, 0.09);
 }
 
 .explanation {
@@ -775,6 +1000,40 @@ button {
   gap: 8px;
 }
 
+.composition-list {
+  display: grid;
+  gap: 8px;
+}
+
+.composition-list article {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.composition-list strong {
+  color: #f8fafc;
+  font-size: 1rem;
+}
+
+.composition-list span,
+.composition-list p,
+.composition-total {
+  margin: 0;
+  color: #b7c3be;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.composition-total {
+  margin-top: 10px;
+  color: #99a7a1;
+  font-weight: 800;
+}
+
 .event-list article {
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -785,6 +1044,21 @@ button {
 .app-shell.light .event-list article {
   border-color: rgba(24, 34, 30, 0.09);
   background: rgba(24, 34, 30, 0.035);
+}
+
+.app-shell.light .composition-list article {
+  border-color: rgba(24, 34, 30, 0.09);
+  background: rgba(24, 34, 30, 0.035);
+}
+
+.app-shell.light .composition-list strong {
+  color: #18221e;
+}
+
+.app-shell.light .composition-list span,
+.app-shell.light .composition-list p,
+.app-shell.light .composition-total {
+  color: #61706a;
 }
 
 .event-list strong {
@@ -847,6 +1121,11 @@ button {
 .legend-metal {
   background: #67e8f9;
   box-shadow: 0 0 12px #67e8f9;
+}
+
+.legend-hbond {
+  background: repeating-linear-gradient(90deg, #38bdf8 0 4px, transparent 4px 8px);
+  border-radius: 4px;
 }
 
 .legend-shell {
@@ -917,6 +1196,7 @@ button {
     height: 32px;
   }
 
+  .builder-results,
   .preset-grid,
   .legend-grid {
     grid-template-columns: 1fr;

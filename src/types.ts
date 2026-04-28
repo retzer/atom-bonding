@@ -9,6 +9,7 @@ export type BondKind =
 export type AppMode = "free" | "guided" | "presets";
 export type ThemeMode = "dark" | "light";
 export type VisualStyle = "detailed" | "simple-neutral" | "simple-colored";
+export type ProjectionMode = "orthographic" | "soft-perspective" | "deep-perspective";
 
 export type AtomSymbol =
   | "H"
@@ -62,13 +63,16 @@ export type AtomParticle = {
   symbol: AtomSymbol;
   x: number;
   y: number;
+  z?: number;
   vx: number;
   vy: number;
+  vz?: number;
   radius: number;
   charge: number;
   bonds: string[];
   targetX?: number;
   targetY?: number;
+  targetZ?: number;
   guided?: boolean;
 };
 
@@ -93,6 +97,15 @@ export type ElectronEffect = {
   kind: "share" | "transfer" | "delocalized";
 };
 
+export type HydrogenBond = {
+  id: string;
+  hydrogen: string;
+  donor: string;
+  acceptor: string;
+  distance: number;
+  strength: number;
+};
+
 export type BondEvent = {
   id: string;
   time: number;
@@ -113,6 +126,7 @@ export type MetallicElectron = {
 export type SimulationState = {
   atoms: AtomParticle[];
   bonds: Bond[];
+  hydrogenBonds: HydrogenBond[];
   effects: ElectronEffect[];
   metallicElectrons: MetallicElectron[];
   events: BondEvent[];
@@ -132,8 +146,12 @@ export type SimulationSettings = {
   zoom: number;
   theme: ThemeMode;
   visualStyle: VisualStyle;
+  projectionMode: ProjectionMode;
   showShells: boolean;
   showLabels: boolean;
+  geometryAssist: boolean;
+  geometry3D: boolean;
+  relaxationStrength: number;
   advanced: boolean;
   selectedElements: AtomSymbol[];
 };
@@ -141,9 +159,11 @@ export type SimulationSettings = {
 export type MoleculePreset = {
   id: string;
   name: string;
+  aliases?: string[];
   formula: string;
   category: "covalent" | "ionic" | "metallic" | "advanced";
   atoms: Array<{ symbol: AtomSymbol; x: number; y: number }>;
+  bonds?: Array<{ a: number; b: number; order?: 1 | 2 | 3; kind?: BondKind }>;
   description: string;
   science: string;
   geometry?: string;
