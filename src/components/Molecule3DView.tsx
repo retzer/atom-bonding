@@ -412,22 +412,49 @@ function frontBondedAtoms(atoms: ProjectedAtom[], bonds: Bond[]) {
 function lonePairClouds(atoms: SceneAtom[], bonds: Bond[]): LonePairCloud[] {
   const clouds: LonePairCloud[] = [];
   const graph = buildMoleculeGraph(atoms, bonds);
+  const componentSize = componentSizesByAtom(atoms, structuralBonds(bonds));
   for (const atom of atoms) {
     const analysis = analyzeAtomGeometry(atom, atoms, bonds);
     if (!analysis?.lonePairs) continue;
+    if ((componentSize.get(atom.id) ?? atoms.length) > 6) continue;
+    if (analysis.bondedAtoms < 2) continue;
+    if (!["AX2E", "AX2E2", "AX3E"].includes(analysis.axe)) continue;
     const vectors = lonePairVectorsFor(analysis.axe, analysis.lonePairs, graph.neighborsById.get(atom.id)?.length ?? 0);
     vectors.forEach((vector, index) => {
       clouds.push({
         id: `lp-${atom.id}-${index}`,
         centerId: atom.id,
-        x: atom.x + vector.x * 0.76,
-        y: atom.y + vector.y * 0.76,
-        z: atom.z + vector.z * 0.76,
-        radius: Math.max(12, atom.radius * 0.42)
+        x: atom.x + vector.x * 0.58,
+        y: atom.y + vector.y * 0.58,
+        z: atom.z + vector.z * 0.58,
+        radius: Math.max(10, atom.radius * 0.34)
       });
     });
   }
   return clouds;
+}
+
+function componentSizesByAtom(atoms: SceneAtom[], bonds: Bond[]) {
+  const graph = buildMoleculeGraph(atoms, bonds);
+  const sizes = new Map<string, number>();
+  const seen = new Set<string>();
+  for (const atom of atoms) {
+    if (seen.has(atom.id)) continue;
+    const stack = [atom];
+    const ids: string[] = [];
+    seen.add(atom.id);
+    while (stack.length) {
+      const current = stack.pop()!;
+      ids.push(current.id);
+      for (const neighbor of graph.neighborsById.get(current.id) ?? []) {
+        if (seen.has(neighbor.id)) continue;
+        seen.add(neighbor.id);
+        stack.push(neighbor as SceneAtom);
+      }
+    }
+    for (const id of ids) sizes.set(id, ids.length);
+  }
+  return sizes;
 }
 
 function lonePairVectorsFor(axe: string, lonePairs: number, bondedAtoms: number): Vec3[] {
