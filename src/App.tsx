@@ -63,6 +63,12 @@ export function App() {
           <LearningPanel
             mode={sim.mode}
             activePresetId={sim.activePreset?.id}
+            canFormGlucoseRing={sim.activePreset?.id === "glucose-linear"}
+            canSelectGlucoseAnomer={["glucose-linear", "glucose-ring", "glucose-alpha", "glucose-beta"].includes(sim.activePreset?.id ?? "")}
+            glucoseAnomer={sim.glucoseAnomer}
+            glucoseStage={sim.glucoseStage}
+            onFormGlucoseRing={sim.formGlucoseRing}
+            onGlucoseAnomer={sim.setGlucoseAnomerTarget}
             onPreset={(id) => sim.loadPreset(id, sim.mode === "guided" ? "guided" : "presets")}
             onMoleculePreset={(preset) => sim.loadMoleculePreset(preset, sim.mode === "guided" ? "guided" : "presets")}
           />

@@ -5,21 +5,59 @@ import { moleculePresets } from "../data/presets";
 import { fetchPubChemMolecule, fetchPubChemSuggestions } from "../data/pubchem";
 import type { AppMode, MoleculePreset } from "../types";
 
+type GlucoseAnomer = "alpha" | "beta";
+type GlucoseStage = "idle" | "aldehyde" | "hemiacetal" | "ring";
+
 type Props = {
   mode: AppMode;
   activePresetId?: string;
+  canFormGlucoseRing: boolean;
+  canSelectGlucoseAnomer: boolean;
+  glucoseAnomer: GlucoseAnomer;
+  glucoseStage: GlucoseStage;
+  onFormGlucoseRing: (anomer?: GlucoseAnomer) => void;
+  onGlucoseAnomer: (anomer: GlucoseAnomer) => void;
   onPreset: (id: string) => void;
   onMoleculePreset: (preset: MoleculePreset) => void;
 };
 
-export function LearningPanel({ mode, activePresetId, onPreset, onMoleculePreset }: Props) {
+type PresetCategory = MoleculePreset["category"];
+
+const presetFolders: Array<{ category: PresetCategory; title: string; description: string }> = [
+  { category: "covalent", title: "Covalent molecules", description: "Shared electron pairs, polarity, geometry" },
+  { category: "ionic", title: "Ionic compounds", description: "Electron transfer and ion attraction" },
+  { category: "metallic", title: "Metallic lattices", description: "Positive ions with mobile electrons" },
+  { category: "advanced", title: "Organic and resonance", description: "Functional groups, rings, mixed bonds" }
+];
+
+export function LearningPanel({
+  mode,
+  activePresetId,
+  canFormGlucoseRing,
+  canSelectGlucoseAnomer,
+  glucoseAnomer,
+  glucoseStage,
+  onFormGlucoseRing,
+  onGlucoseAnomer,
+  onPreset,
+  onMoleculePreset
+}: Props) {
   const [query, setQuery] = useState("");
   const [builderStatus, setBuilderStatus] = useState<"idle" | "loading" | "imported" | "missing">("idle");
   const [builderMessage, setBuilderMessage] = useState("");
   const [pubChemSuggestions, setPubChemSuggestions] = useState<string[]>([]);
   const [suggestionStatus, setSuggestionStatus] = useState<"idle" | "loading">("idle");
   const moleculeMatches = useMemo(() => findMoleculeMatches(query), [query]);
+  const groupedPresets = useMemo(
+    () => presetFolders.map((folder) => ({ ...folder, presets: moleculePresets.filter((preset) => preset.category === folder.category) })),
+    []
+  );
   const showSuggestions = query.trim().length > 0 && (moleculeMatches.length > 0 || pubChemSuggestions.length > 0 || query.trim().length < 3 || suggestionStatus === "loading");
+  const showGlucoseTools = canFormGlucoseRing || canSelectGlucoseAnomer;
+  const displayGlucoseStage = glucoseStage === "idle"
+    ? activePresetId === "glucose-linear" ? "aldehyde" : canSelectGlucoseAnomer ? "ring" : "idle"
+    : glucoseStage;
+  const glucoseStageIndex = (["aldehyde", "hemiacetal", "ring"] as const).indexOf(displayGlucoseStage as Exclude<GlucoseStage, "idle">);
 
   useEffect(() => {
     const term = query.trim();
@@ -139,6 +177,33 @@ export function LearningPanel({ mode, activePresetId, onPreset, onMoleculePreset
         </button>
         {builderMessage && <p className={builderStatus === "imported" ? "builder-message success" : "builder-message"}>{builderMessage}</p>}
       </form>
+      {showGlucoseTools && (
+        <div className="preset-action glucose-action">
+          <div className="anomer-selector" aria-label="Glucose anomer selector">
+            {(["alpha", "beta"] as const).map((anomer) => (
+              <button key={anomer} type="button" className={glucoseAnomer === anomer ? "active" : ""} onClick={() => onGlucoseAnomer(anomer)}>
+                {anomer === "alpha" ? "\u03b1-glucose" : "\u03b2-glucose"}
+              </button>
+            ))}
+          </div>
+          {canFormGlucoseRing && (
+            <button type="button" className="form-ring-button" onClick={() => onFormGlucoseRing(glucoseAnomer)}>
+              <WandSparkles size={16} />
+              Form ring
+            </button>
+          )}
+          <div className="reaction-steps" aria-label="Glucose ring formation stages">
+            {[
+              { id: "aldehyde", label: "aldehyde + OH" },
+              { id: "hemiacetal", label: "hemiacetal" },
+              { id: "ring", label: "ring closure" }
+            ].map((step, index) => (
+              <span key={step.id} className={index < glucoseStageIndex ? "done" : index === glucoseStageIndex ? "active" : ""}>{step.label}</span>
+            ))}
+          </div>
+          <span>{canFormGlucoseRing ? "Choose an anomer, then fold linear glucose into its cyclic form." : "Flip the anomeric OH at C1 to compare alpha and beta glucose."}</span>
+        </div>
+      )}
       {showSuggestions && (
         <div className="builder-results">
           {moleculeMatches.map((preset) => (
@@ -159,12 +224,25 @@ export function LearningPanel({ mode, activePresetId, onPreset, onMoleculePreset
           {suggestionStatus === "loading" && <p className="builder-hint">Checking PubChem...</p>}
         </div>
       )}
-      <div className="preset-grid">
-        {moleculePresets.map((preset) => (
-          <button key={preset.id} className={activePresetId === preset.id ? "preset active" : "preset"} onClick={() => onPreset(preset.id)} title={preset.description}>
-            <strong>{preset.formula}</strong>
-            <span>{preset.name}</span>
-          </button>
+      <div className="preset-folders">
+        {groupedPresets.map((folder) => (
+          <details key={folder.category} className={`preset-folder preset-folder-${folder.category}`} open={folder.category === "covalent" || folder.category === "ionic" || folder.presets.some((preset) => preset.id === activePresetId)}>
+            <summary>
+              <span>
+                <strong>{folder.title}</strong>
+                <small>{folder.description}</small>
+              </span>
+              <em>{folder.presets.length}</em>
+            </summary>
+            <div className="preset-grid">
+              {folder.presets.map((preset) => (
+                <button key={preset.id} className={activePresetId === preset.id ? "preset active" : "preset"} onClick={() => onPreset(preset.id)} title={preset.description}>
+                  <strong>{preset.formula}</strong>
+                  <span>{preset.name}</span>
+                </button>
+              ))}
+            </div>
+          </details>
         ))}
       </div>
     </section>

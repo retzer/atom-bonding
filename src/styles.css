@@ -702,6 +702,139 @@ button:disabled {
   color: #047857;
 }
 
+.preset-action {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(244, 114, 182, 0.08));
+}
+
+.preset-action button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #071412;
+  background: #5eead4;
+  font-size: 0.83rem;
+  font-weight: 900;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.preset-action button:hover {
+  border-color: rgba(94, 234, 212, 0.42);
+  transform: translateY(-1px);
+}
+
+.preset-action > span {
+  color: #a7b2ad;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.app-shell.light .preset-action {
+  border-color: rgba(20, 184, 166, 0.24);
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.1), rgba(244, 114, 182, 0.075));
+}
+
+.app-shell.light .preset-action button {
+  color: #06251f;
+  background: #2dd4bf;
+}
+
+.app-shell.light .preset-action > span {
+  color: #61706a;
+}
+
+.anomer-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.preset-action .anomer-selector button {
+  min-height: 34px;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #d7e2de;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.preset-action .anomer-selector button.active {
+  border-color: transparent;
+  color: #071412;
+  background: #a7f3d0;
+}
+
+.form-ring-button {
+  width: 100%;
+}
+
+.reaction-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.reaction-steps span {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #a7b2ad;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.reaction-steps span.done {
+  border-color: rgba(94, 234, 212, 0.25);
+  color: #99f6e4;
+  background: rgba(20, 184, 166, 0.12);
+}
+
+.reaction-steps span.active {
+  border-color: rgba(94, 234, 212, 0.56);
+  color: #071412;
+  background: #5eead4;
+}
+
+.app-shell.light .preset-action .anomer-selector button {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #33443d;
+  background: rgba(24, 34, 30, 0.045);
+}
+
+.app-shell.light .preset-action .anomer-selector button.active,
+.app-shell.light .reaction-steps span.active {
+  color: #06251f;
+  background: #99f6e4;
+}
+
+.app-shell.light .reaction-steps span {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #61706a;
+  background: rgba(24, 34, 30, 0.04);
+}
+
+.app-shell.light .reaction-steps span.done {
+  border-color: rgba(20, 184, 166, 0.25);
+  color: #047857;
+  background: rgba(20, 184, 166, 0.09);
+}
+
 .builder-results {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -864,6 +997,87 @@ button:disabled {
 }
 
 .app-shell.light .builder-hint {
+  color: #61706a;
+}
+
+.preset-folders {
+  display: grid;
+  gap: 10px;
+}
+
+.preset-folder {
+  --folder-accent: #5eead4;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  overflow: hidden;
+}
+
+.preset-folder-covalent { --folder-accent: #5eead4; }
+.preset-folder-ionic { --folder-accent: #60a5fa; }
+.preset-folder-metallic { --folder-accent: #fbbf24; }
+.preset-folder-advanced { --folder-accent: #f472b6; }
+
+.preset-folder summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.preset-folder summary::marker {
+  color: var(--folder-accent);
+}
+
+.preset-folder summary span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.preset-folder summary strong {
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.preset-folder summary small {
+  color: #a7b2ad;
+  font-size: 0.74rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.preset-folder summary em {
+  min-width: 28px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--folder-accent) 40%, transparent);
+  border-radius: 999px;
+  color: var(--folder-accent);
+  background: color-mix(in srgb, var(--folder-accent) 12%, transparent);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 900;
+  text-align: center;
+}
+
+.preset-folder .preset-grid {
+  padding: 0 10px 10px;
+}
+
+.app-shell.light .preset-folder {
+  border-color: rgba(24, 34, 30, 0.1);
+  background: rgba(24, 34, 30, 0.032);
+}
+
+.app-shell.light .preset-folder summary strong {
+  color: #18221e;
+}
+
+.app-shell.light .preset-folder summary small {
   color: #61706a;
 }
 
