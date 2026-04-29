@@ -191,11 +191,12 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     atom.x += atom.vx * dt * motionScale;
     atom.y += atom.vy * dt * motionScale;
     atom.z = settings.geometry3D ? (atom.z ?? 0) + (atom.vz ?? 0) * dt * motionScale : 0;
-    if (atom.x < atom.radius + 8 || atom.x > width - atom.radius - 8) {
+    const useViewportWalls = !settings.geometry3D || (!atom.guided && atom.bonds.length === 0);
+    if (useViewportWalls && (atom.x < atom.radius + 8 || atom.x > width - atom.radius - 8)) {
       atom.vx *= -0.88;
       atom.x = clamp(atom.x, atom.radius + 8, width - atom.radius - 8);
     }
-    if (atom.y < atom.radius + 8 || atom.y > height - atom.radius - 8) {
+    if (useViewportWalls && (atom.y < atom.radius + 8 || atom.y > height - atom.radius - 8)) {
       atom.vy *= -0.88;
       atom.y = clamp(atom.y, atom.radius + 8, height - atom.radius - 8);
     }

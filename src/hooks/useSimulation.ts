@@ -23,7 +23,7 @@ export const defaultSettings: SimulationSettings = {
   cameraPreset: "free",
   lightYaw: -42,
   lightPitch: 48,
-  lightIntensity: 1,
+  lightIntensity: 0.5,
   lightColor: "#ffffff",
   showShells: true,
   showLabels: true,
