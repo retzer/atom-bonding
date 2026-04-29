@@ -12,6 +12,7 @@ export type VisualStyle = "detailed" | "simple-neutral" | "simple-colored";
 export type ProjectionMode = "orthographic" | "soft-perspective" | "deep-perspective";
 export type CameraPreset = "free" | "top" | "side" | "isometric";
 export type StructureDisplayMode = "full" | "simplified" | "skeleton";
+export type AnalysisMode = "structure" | "chemistry";
 
 export type AtomSymbol =
   | "H"
@@ -196,6 +197,7 @@ export type SimulationSettings = {
   showShells: boolean;
   showLabels: boolean;
   displayMode: StructureDisplayMode;
+  analysisMode: AnalysisMode;
   showElectronRegions: boolean;
   showBondDipoles: boolean;
   showNetDipole: boolean;

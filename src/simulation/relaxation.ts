@@ -12,7 +12,7 @@ export function applyMolecularRelaxation(atoms: AtomParticle[], bonds: Bond[], s
   applyBondSprings(atoms, bonds, strength, dt);
   if (settings.geometry3D) applyTargetDepthSprings(atoms, strength, dt);
   applyVseprAngleForces(atoms, bonds, strength, dt);
-  applyNonbondedRepulsion(atoms, bonds, strength, dt);
+  applyNonbondedRepulsion(atoms, bonds, settings, strength, dt);
 }
 
 function applyBondSprings(atoms: AtomParticle[], bonds: Bond[], strength: number, dt: number) {
@@ -100,7 +100,7 @@ function applyVseprAngleForces(atoms: AtomParticle[], bonds: Bond[], strength: n
   }
 }
 
-function applyNonbondedRepulsion(atoms: AtomParticle[], bonds: Bond[], strength: number, dt: number) {
+function applyNonbondedRepulsion(atoms: AtomParticle[], bonds: Bond[], settings: SimulationSettings, strength: number, dt: number) {
   const bonded = new Set(structuralBonds(bonds).map((bond) => [bond.a, bond.b].sort().join("|")));
   for (let i = 0; i < atoms.length; i += 1) {
     for (let j = i + 1; j < atoms.length; j += 1) {
@@ -109,16 +109,20 @@ function applyNonbondedRepulsion(atoms: AtomParticle[], bonds: Bond[], strength:
       if (bonded.has([a.id, b.id].sort().join("|"))) continue;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
-      const dist = Math.max(0.01, Math.hypot(dx, dy));
+      const dz = settings.geometry3D ? (b.z ?? 0) - (a.z ?? 0) : 0;
+      const dist = Math.max(0.01, Math.hypot(dx, dy, dz));
       const minDist = Math.min(120, a.radius + b.radius + 28);
       if (dist >= minDist) continue;
       const push = (minDist - dist) * strength * dt * 0.9;
       const nx = dx / dist;
       const ny = dy / dist;
+      const nz = dz / dist;
       a.x -= nx * push;
       a.y -= ny * push;
+      a.z = (a.z ?? 0) - nz * push;
       b.x += nx * push;
       b.y += ny * push;
+      b.z = (b.z ?? 0) + nz * push;
     }
   }
 }

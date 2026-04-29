@@ -3,6 +3,7 @@ import { Download, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { atomData } from "../data/atoms";
 import type { AtomParticle, Bond, SimulationSettings, SimulationState } from "../types";
 import { bondKindLabel } from "../simulation/chemistry";
+import { detectFunctionalGroups } from "../simulation/functionalGroups";
 
 type Props = {
   state: SimulationState;
@@ -165,26 +166,45 @@ function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: S
   drawBackground(ctx, settings, width, height);
   if (state.metallicLattice && settings.visualStyle === "detailed") drawMetalElectronCloud(ctx, state, width, height, settings.zoom);
   const renderState = settings.geometry3D ? projectedState(state) : state;
+  const detailLevel = detailLevelFor2D(settings);
+  const showChemistryDetail = settings.analysisMode === "chemistry" && detailLevel === "detail";
   ctx.save();
   applyCamera(ctx, width, height, settings.zoom);
   drawMoleculeShadow(ctx, renderState, settings, width, height);
   const visibleBonds = depthSortedBonds(renderState).filter((bond) => bondVisibleInMode2D(bond, renderState, settings));
   const visibleAtoms = depthSortedAtoms(renderState).filter((atom) => atomVisibleInMode2D(atom, settings));
+  if (shouldShowFunctionalGroups2D(settings, detailLevel)) drawFunctionalGroupHighlights2D(ctx, renderState, settings, detailLevel);
   for (const hBond of renderState.hydrogenBonds) drawHydrogenBond(ctx, renderState, hBond, settings);
   for (const bond of visibleBonds) drawBond(ctx, renderState, bond, settings);
-  if (settings.showElectronFlow) drawElectronFlow(ctx, renderState, settings);
+  if (showChemistryDetail && settings.showElectronFlow) drawElectronFlow(ctx, renderState, settings);
   for (const electron of renderState.metallicElectrons) drawFreeElectron(ctx, electron.x, electron.y, settings);
   for (const effect of renderState.effects) drawEffect(ctx, renderState, effect, settings);
   for (const atom of visibleAtoms) drawAtom(ctx, atom, renderState, settings);
   if (settings.geometry3D) {
     for (const atom of frontBondedAtoms(renderState).filter((atom) => atomVisibleInMode2D(atom, settings))) drawAtom(ctx, atom, renderState, settings);
   }
-  if (settings.showNetDipole) drawNetDipole(ctx, renderState, settings);
-  drawBondAngleBadge(ctx, renderState, hoveredBondId ?? renderState.selectedBondId, settings);
+  if (showChemistryDetail && settings.showNetDipole) drawNetDipole(ctx, renderState, settings);
+  if (showChemistryDetail) drawBondAngleBadge(ctx, renderState, hoveredBondId ?? renderState.selectedBondId, settings);
   ctx.restore();
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+type DetailLevel = "abstract" | "structure" | "detail";
+
+function detailLevelFor2D(settings: SimulationSettings): DetailLevel {
+  if (settings.analysisMode === "structure") {
+    if (settings.zoom < 0.95) return "abstract";
+    if (settings.zoom < 1.45) return "structure";
+    return "detail";
+  }
+  if (settings.zoom < 0.75) return "abstract";
+  if (settings.zoom < 1.12) return "structure";
+  return "detail";
+}
+
+function shouldShowFunctionalGroups2D(settings: SimulationSettings, detailLevel: DetailLevel) {
+  return settings.showFunctionalGroups || settings.analysisMode === "structure" || detailLevel === "abstract";
+}
 
 function projectedState(state: SimulationState): SimulationState {
   const atoms = state.atoms.map((atom) => {
@@ -210,22 +230,32 @@ function depthSortedBonds(state: SimulationState) {
 }
 
 function atomVisibleInMode2D(atom: AtomParticle, settings: SimulationSettings) {
+  const detailLevel = detailLevelFor2D(settings);
   if (settings.displayMode === "skeleton") return false;
   if (settings.displayMode === "simplified" && atom.symbol === "H") return false;
+  if (detailLevel === "abstract" && atom.symbol === "H") return false;
+  if (settings.analysisMode === "structure" && detailLevel !== "detail" && atom.symbol === "H") return false;
   return true;
 }
 
 function bondVisibleInMode2D(bond: Bond, state: SimulationState, settings: SimulationSettings) {
-  if (settings.displayMode === "full" || settings.displayMode === "skeleton") return true;
+  const detailLevel = detailLevelFor2D(settings);
+  if (settings.displayMode === "skeleton") return true;
   const a = state.atoms.find((atom) => atom.id === bond.a);
   const b = state.atoms.find((atom) => atom.id === bond.b);
   if (!a || !b) return false;
+  if (detailLevel === "abstract" || settings.analysisMode === "structure" && detailLevel !== "detail") return a.symbol !== "H" && b.symbol !== "H";
+  if (settings.displayMode === "full") return true;
   return a.symbol !== "H" && b.symbol !== "H";
 }
 
 function shouldShowAtomLabel2D(atom: AtomParticle, state: SimulationState, settings: SimulationSettings) {
+  const detailLevel = detailLevelFor2D(settings);
   if (!settings.showLabels || settings.displayMode === "skeleton") return false;
   if (state.selectedAtomId === atom.id) return true;
+  if (settings.analysisMode === "structure" && detailLevel !== "detail") return atom.symbol !== "H" && atom.radius > 22;
+  if (detailLevel === "abstract") return atom.symbol !== "H" && atom.radius > 22;
+  if (detailLevel === "structure") return atom.symbol !== "H";
   if (settings.displayMode === "simplified" && atom.symbol === "H") return false;
   if (settings.zoom < 0.8) return atom.symbol !== "H" && atom.radius > 22;
   if (settings.zoom < 1.15) return atom.symbol !== "H";
@@ -315,6 +345,47 @@ function drawAggregateMoleculeShadow(ctx: CanvasRenderingContext2D, atoms: AtomP
   ctx.restore();
 }
 
+function drawFunctionalGroupHighlights2D(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings, detailLevel: DetailLevel) {
+  if (!state.atoms.length || settings.displayMode === "skeleton") return;
+  const atomById = new Map(state.atoms.map((atom) => [atom.id, atom]));
+  const groups = detectFunctionalGroups(state.atoms, state.bonds);
+  if (!groups.length) return;
+  const abstract = detailLevel === "abstract" || settings.analysisMode === "structure";
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const group of groups) {
+    const pts = group.atomIds.map((id) => atomById.get(id)).filter((atom): atom is AtomParticle => Boolean(atom));
+    if (!pts.length) continue;
+    const cx = pts.reduce((sum, atom) => sum + atom.x, 0) / pts.length;
+    const cy = pts.reduce((sum, atom) => sum + atom.y, 0) / pts.length;
+    const radius = clamp(Math.max(...pts.map((atom) => Math.hypot(atom.x - cx, atom.y - cy) + atom.radius * 0.9)), abstract ? 34 : 28, group.kind === "aromatic" ? 150 : 105);
+    ctx.globalAlpha = settings.theme === "light" ? abstract ? 0.18 : 0.12 : abstract ? 0.26 : 0.2;
+    ctx.fillStyle = group.color;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, radius * (group.kind === "aromatic" ? 1.16 : 1.06), radius * (group.kind === "aromatic" ? 0.82 : 0.72), -0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = settings.theme === "light" ? abstract ? 0.6 : 0.38 : abstract ? 0.72 : 0.5;
+    ctx.strokeStyle = group.color;
+    ctx.lineWidth = abstract ? 2.4 : 1.4;
+    ctx.setLineDash(group.kind === "aromatic" ? [3, 4] : [6, 6]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (settings.zoom >= 0.72 || abstract) {
+      ctx.globalAlpha = settings.theme === "light" ? 0.88 : 0.94;
+      ctx.font = `${abstract ? 900 : 800} ${abstract ? 12 : 11}px Inter, system-ui`;
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = settings.theme === "light" ? "rgba(248,251,255,0.9)" : "rgba(2,6,23,0.72)";
+      ctx.lineWidth = 4;
+      ctx.strokeText(group.label, cx, cy - radius * 0.84);
+      ctx.fillStyle = group.color;
+      ctx.fillText(group.label, cx, cy - radius * 0.84);
+    }
+  }
+  ctx.restore();
+}
+
 function frontBondedAtoms(state: SimulationState) {
   const byId = new Map(state.atoms.map((atom) => [atom.id, atom]));
   const front = new Map<string, AtomParticle>();
@@ -347,7 +418,7 @@ function screenToWorld(screenX: number, screenY: number, width: number, height: 
 }
 
 function isDetailed(settings: SimulationSettings) {
-  return settings.visualStyle === "detailed";
+  return settings.visualStyle === "detailed" && (settings.analysisMode === "chemistry" || detailLevelFor2D(settings) === "detail");
 }
 
 function palette(settings: SimulationSettings) {
@@ -451,6 +522,7 @@ function drawBond(ctx: CanvasRenderingContext2D, state: SimulationState, bond: B
   const offsets = bond.kind === "metallic" ? [0] : bond.order === 1 ? [0] : bond.order === 2 ? [-5, 5] : [-8, 0, 8];
   const depth = settings.geometry3D ? clamp(1 + (((a.z ?? 0) + (b.z ?? 0)) / 2) / 520, 0.68, 1.28) : 1;
   const depthAlpha = settings.geometry3D ? clamp(0.58 + (((a.z ?? 0) + (b.z ?? 0)) / 2 + 260) / 720, 0.46, 1) : 1;
+  const chemistryDetail = settings.analysisMode === "chemistry" && detailLevelFor2D(settings) === "detail";
 
   ctx.save();
   ctx.lineCap = "round";
@@ -468,10 +540,10 @@ function drawBond(ctx: CanvasRenderingContext2D, state: SimulationState, bond: B
     ctx.setLineDash([]);
   }
   ctx.globalAlpha = 1;
-  if (bond.kind !== "metallic") {
+  if (chemistryDetail && bond.kind !== "metallic") {
     drawSharedElectrons(ctx, a, b, bond, settings);
   }
-  if (settings.showBondDipoles && (bond.kind === "polar-covalent" || bond.kind === "ionic") && bond.electronShift) {
+  if (chemistryDetail && settings.showBondDipoles && (bond.kind === "polar-covalent" || bond.kind === "ionic") && bond.electronShift) {
     drawDipoleIndicator(ctx, a, b, bond, segment, settings);
   }
   ctx.restore();
@@ -522,14 +594,17 @@ function drawNetDipole(ctx: CanvasRenderingContext2D, state: SimulationState, se
   }, { x: 0, y: 0 });
   const magnitude = Math.hypot(net.x, net.y);
   if (magnitude < 18 || !state.atoms.length) return;
-  const mass = state.atoms.reduce((sum, atom) => sum + atomData[atom.symbol].atomicNumber, 0) || state.atoms.length;
-  const cx = state.atoms.reduce((sum, atom) => sum + atom.x * atomData[atom.symbol].atomicNumber, 0) / mass;
-  const cy = state.atoms.reduce((sum, atom) => sum + atom.y * atomData[atom.symbol].atomicNumber, 0) / mass;
+  const cx = state.atoms.reduce((sum, atom) => sum + atom.x, 0) / state.atoms.length;
+  const cy = state.atoms.reduce((sum, atom) => sum + atom.y, 0) / state.atoms.length;
   const ux = net.x / magnitude;
   const uy = net.y / magnitude;
-  const length = clamp(magnitude / Math.max(1, state.bonds.length) * 3.8, 34, 92);
-  const width = clamp(2.2 + magnitude / Math.max(1, state.bonds.length) * 0.05, 2.4, 6);
-  drawArrow(ctx, cx - ux * length * 0.42, cy - uy * length * 0.42, cx + ux * length * 0.58, cy + uy * length * 0.58, settings.theme === "light" ? "#0f766e" : "#5eead4", width, "net μ");
+  const strength = magnitude / Math.max(1, state.bonds.length);
+  const length = clamp(26 + strength * 4.1, 42, 118);
+  const width = clamp(4.4 + strength * 0.075, 4.8, 9);
+  const startOffset = clamp(8 + length * 0.07, 10, 18);
+  const startX = cx + ux * startOffset;
+  const startY = cy + uy * startOffset;
+  drawArrow(ctx, startX, startY, startX + ux * length, startY + uy * length, settings.theme === "light" ? "#0f766e" : "#5eead4", width, "μ", clamp(strength / 38, 0.35, 1));
 }
 
 function visibleBondSegment(a: AtomParticle, b: AtomParticle): BondSegment | null {
@@ -978,7 +1053,7 @@ function distanceToSegment(px: number, py: number, x1: number, y1: number, x2: n
   return Math.hypot(px - x, py - y);
 }
 
-function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, color: string, width: number, label?: string) {
+function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, color: string, width: number, label?: string, strength = 0.55) {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const length = Math.max(0.01, Math.hypot(dx, dy));
@@ -987,6 +1062,18 @@ function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: nu
   const px = -uy;
   const py = ux;
   ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 7 + strength * 13;
+  ctx.globalAlpha = 0.2 + strength * 0.24;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width + 6;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2 - ux * 10, y2 - uy * 10);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
   ctx.strokeStyle = color;
   ctx.fillStyle = color;
   ctx.lineWidth = width;
@@ -1002,10 +1089,16 @@ function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: nu
   ctx.closePath();
   ctx.fill();
   if (label) {
-    ctx.font = "800 12px Inter, system-ui";
+    ctx.font = "900 14px Inter, system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(label, x2 + px * 14, y2 + py * 14);
+    const labelX = x2 + px * 13 - ux * 3;
+    const labelY = y2 + py * 13 - uy * 3;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(247, 253, 250, 0.88)";
+    ctx.lineWidth = 4;
+    ctx.strokeText(label, labelX, labelY);
+    ctx.fillText(label, labelX, labelY);
   }
   ctx.restore();
 }

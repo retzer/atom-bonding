@@ -83,6 +83,16 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
             Color
           </button>
         </div>
+        <div className="projection-row" aria-label="Analysis mode">
+          <button className={settings.analysisMode === "structure" ? "visual-choice active" : "visual-choice"} title="Clean structural view with zoom-based abstraction" onClick={() => onSetting("analysisMode", "structure")}>
+            <Box size={15} />
+            Structure
+          </button>
+          <button className={settings.analysisMode === "chemistry" ? "visual-choice active" : "visual-choice"} title="Full chemistry view with charges, dipoles, regions, and electron detail" onClick={() => onSetting("analysisMode", "chemistry")}>
+            <Lightbulb size={15} />
+            Chemistry
+          </button>
+        </div>
         <div className="projection-row" aria-label="Structure detail">
           {(["full", "simplified", "skeleton"] as const).map((mode) => (
             <button key={mode} className={settings.displayMode === mode ? "visual-choice active" : "visual-choice"} title={`Use ${mode} structure display`} onClick={() => onSetting("displayMode", mode)}>

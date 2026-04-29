@@ -150,10 +150,10 @@ export function createPresetState(width: number, height: number, preset: Molecul
 }
 
 export function stepSimulation(state: SimulationState, settings: SimulationSettings, width: number, height: number, rawDt: number): SimulationState {
-  const dt = Math.min(0.04, rawDt * settings.speed * (settings.geometry3D ? 0.35 : 1));
-  const thermalMotion = settings.geometry3D ? settings.temperature * 0.05 : settings.temperature;
-  const collisionStrength = settings.geometry3D ? settings.collisionStrength * 0.08 : settings.collisionStrength;
-  const motionScale = settings.geometry3D ? 10 : 24 + settings.temperature * 8;
+  const dt = Math.min(0.04, rawDt * settings.speed * (settings.geometry3D ? 0.5 : 1));
+  const thermalMotion = settings.geometry3D ? settings.temperature * 0.12 : settings.temperature;
+  const collisionStrength = settings.geometry3D ? settings.collisionStrength * 0.18 : settings.collisionStrength;
+  const motionScale = settings.geometry3D ? 9 + settings.temperature * 2 : 24 + settings.temperature * 8;
   const atoms = state.atoms.map((atom) => ({ ...atom, bonds: [] as string[] }));
   const bonds = state.bonds.map((bond) => ({ ...bond }));
   const effects = state.effects
@@ -229,22 +229,27 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
       const b = atoms[j];
       const dx = b.x - a.x;
       const dy = b.y - a.y;
-      const dist = Math.max(0.01, Math.hypot(dx, dy));
       const dz = (b.z ?? 0) - (a.z ?? 0);
+      const dist = Math.max(0.01, settings.geometry3D ? Math.hypot(dx, dy, dz) : Math.hypot(dx, dy));
       const formationDistance = settings.geometry3D ? Math.hypot(dx, dy, dz * 0.55) : dist;
       const minDist = a.radius + b.radius + 10;
       if (dist < minDist && !bonds.some((bond) => (bond.a === a.id && bond.b === b.id) || (bond.a === b.id && bond.b === a.id))) {
         const nx = dx / dist;
         const ny = dy / dist;
+        const nz = settings.geometry3D ? dz / dist : 0;
         const overlap = (minDist - dist) * 0.48;
         a.x -= nx * overlap;
         a.y -= ny * overlap;
+        a.z = (a.z ?? 0) - nz * overlap;
         b.x += nx * overlap;
         b.y += ny * overlap;
+        b.z = (b.z ?? 0) + nz * overlap;
         a.vx -= nx * collisionStrength * 18;
         a.vy -= ny * collisionStrength * 18;
+        a.vz = (a.vz ?? 0) - nz * collisionStrength * 9;
         b.vx += nx * collisionStrength * 18;
         b.vy += ny * collisionStrength * 18;
+        b.vz = (b.vz ?? 0) + nz * collisionStrength * 9;
       }
 
       const bondingRange = (a.radius + b.radius) * settings.bondingDistance * (settings.geometry3D ? 1.18 : 1);
