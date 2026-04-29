@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Download, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { atomData } from "../data/atoms";
 import type { AtomParticle, Bond, SimulationSettings, SimulationState } from "../types";
@@ -97,11 +97,17 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     onZoom(clamp(zoom, 0.55, 2.2));
   };
 
-  const onWheel = (event: WheelEvent<HTMLCanvasElement>) => {
-    event.preventDefault();
-    const direction = event.deltaY > 0 ? -0.08 : 0.08;
-    setZoom(settings.zoom + direction);
-  };
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheel = (event: globalThis.WheelEvent) => {
+      event.preventDefault();
+      const direction = event.deltaY > 0 ? -0.08 : 0.08;
+      setZoom(settings.zoom + direction);
+    };
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleWheel);
+  }, [settings.zoom]);
 
   const exportImage = () => {
     const canvas = canvasRef.current;
@@ -123,7 +129,6 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onPointerLeave={() => setHoveredBondId(null)}
-        onWheel={onWheel}
       />
       <div className="zoom-controls" aria-label="Zoom controls">
         <button title="Zoom out" onClick={() => setZoom(settings.zoom - 0.12)}>
@@ -729,11 +734,12 @@ function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: Simu
   ctx.shadowColor = data.glow;
   ctx.shadowBlur = detailed ? (selected ? 18 : 8) * depth * clamp(depthAlpha + 0.12, 0.5, 1) : 0;
   if (detailed) {
-    const gradient = ctx.createRadialGradient(lightX, lightY, 2, atom.x + atom.radius * 0.16, atom.y + atom.radius * 0.18, atom.radius * 1.08);
-    gradient.addColorStop(0, "#ffffff");
-    gradient.addColorStop(0.18, data.color);
-    gradient.addColorStop(0.72, data.color);
-    gradient.addColorStop(1, settings.theme === "light" ? "rgba(74,85,99,0.92)" : "#111827");
+    const edgeColor = settings.theme === "light" ? mixColor(data.color, "#33443d", 0.22) : mixColor(data.color, "#050807", 0.34);
+    const gradient = ctx.createRadialGradient(lightX, lightY, Math.max(2, atom.radius * 0.08), atom.x + atom.radius * 0.12, atom.y + atom.radius * 0.16, atom.radius * 1.1);
+    gradient.addColorStop(0, mixColor(data.color, "#ffffff", 0.72));
+    gradient.addColorStop(0.28, mixColor(data.color, "#ffffff", 0.2));
+    gradient.addColorStop(0.76, data.color);
+    gradient.addColorStop(1, edgeColor);
     ctx.fillStyle = gradient;
   } else {
     ctx.fillStyle = settings.visualStyle === "simple-colored" ? data.color : colors.atomNeutral;
@@ -744,18 +750,12 @@ function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: Simu
   if (detailed) {
     const shade = ctx.createRadialGradient(atom.x - atom.radius * 0.32, atom.y - atom.radius * 0.4, atom.radius * 0.1, atom.x + atom.radius * 0.32, atom.y + atom.radius * 0.36, atom.radius * 1.16);
     shade.addColorStop(0, "rgba(255,255,255,0)");
-    shade.addColorStop(0.64, "rgba(15,23,42,0.04)");
-    shade.addColorStop(1, settings.theme === "light" ? "rgba(15,23,42,0.18)" : "rgba(0,0,0,0.34)");
+    shade.addColorStop(0.64, "rgba(15,23,42,0.02)");
+    shade.addColorStop(1, settings.theme === "light" ? "rgba(15,23,42,0.08)" : "rgba(0,0,0,0.22)");
     ctx.fillStyle = shade;
     ctx.beginPath();
     ctx.arc(atom.x, atom.y, atom.radius, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = Math.min(1, depthAlpha + 0.08);
-    ctx.fillStyle = settings.theme === "light" ? "rgba(255,255,255,0.82)" : "rgba(255,255,255,0.68)";
-    ctx.beginPath();
-    ctx.arc(lightX, lightY, Math.max(4, atom.radius * 0.18), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = depthAlpha;
   }
   ctx.lineWidth = (selected ? 3 : 1.5) * depth;
   ctx.strokeStyle = selected ? "#facc15" : detailed ? "rgba(255,255,255,0.34)" : colors.atomNeutralEdge;
@@ -770,7 +770,7 @@ function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: Simu
     ctx.beginPath();
     ctx.arc(atom.x, atom.y, atom.radius + 14, 0, Math.PI * 2);
     ctx.stroke();
-    drawValenceElectrons(ctx, atom, data.valenceElectrons, state.time, settings);
+    if (!settings.geometry3D) drawValenceElectrons(ctx, atom, data.valenceElectrons, state.time, settings);
   }
 
   ctx.globalAlpha = clamp(depthAlpha + 0.16, 0.72, 1);
@@ -1008,6 +1008,19 @@ function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: nu
     ctx.fillText(label, x2 + px * 14, y2 + py * 14);
   }
   ctx.restore();
+}
+
+function mixColor(a: string, b: string, amount: number) {
+  const ca = parseColor(a);
+  const cb = parseColor(b);
+  const mix = (left: number, right: number) => Math.round(left * (1 - amount) + right * amount);
+  return `rgb(${mix(ca.r, cb.r)},${mix(ca.g, cb.g)},${mix(ca.b, cb.b)})`;
+}
+
+function parseColor(hex: string) {
+  const clean = hex.replace("#", "");
+  const value = Number.parseInt(clean.length === 3 ? clean.split("").map((item) => item + item).join("") : clean, 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
 }
 
 export function bondLabel(bond: Bond | null) {

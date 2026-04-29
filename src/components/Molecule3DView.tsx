@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Box, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { atomData } from "../data/atoms";
 import type { AtomParticle, Bond, ProjectionMode, SimulationSettings, SimulationState } from "../types";
@@ -151,10 +151,17 @@ export function Molecule3DView({ state, settings, width, height, onResize, onSel
   };
 
   const setZoom = (zoom: number) => onZoom(clamp(zoom, 0.55, 2.2));
-  const onWheel = (event: WheelEvent<HTMLCanvasElement>) => {
-    event.preventDefault();
-    setZoom(settings.zoom + (event.deltaY > 0 ? -0.08 : 0.08));
-  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheel = (event: globalThis.WheelEvent) => {
+      event.preventDefault();
+      setZoom(settings.zoom + (event.deltaY > 0 ? -0.08 : 0.08));
+    };
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleWheel);
+  }, [settings.zoom]);
 
   return (
     <div className="simulation-wrap molecule-3d-wrap" ref={wrapRef}>
@@ -169,7 +176,6 @@ export function Molecule3DView({ state, settings, width, height, onResize, onSel
         onPointerCancel={onPointerUp}
         onPointerLeave={() => setHoveredBondId(null)}
         onContextMenu={(event) => event.preventDefault()}
-        onWheel={onWheel}
       />
       <div className="zoom-controls" aria-label="3D view controls">
         <button title="Zoom out" onClick={() => setZoom(settings.zoom - 0.12)}><ZoomOut size={17} /></button>
@@ -359,14 +365,8 @@ function draw3D(ctx: CanvasRenderingContext2D, atoms: SceneAtom[], sourceAtoms: 
   for (const atom of frontBondedAtoms(projected.filter((atom) => atomVisibleInMode(atom, settings)), visibleBonds)) {
     draw3DAtom(ctx, atom, settings, budget, focusIds);
   }
+  if (settings.visualStyle === "detailed" && budget.detailedEffects) draw3DSurfaceSockets(ctx, projected, visibleBonds, settings, focusIds);
   if (settings.showElectronFlow && budget.overlays) drawElectronFlow3D(ctx, projected, visibleBonds, settings, time);
-  if (settings.visualStyle === "detailed" && budget.detailedEffects) {
-    for (const bond of [...visibleBonds].sort((a, b) => bondDepth(a, byId) - bondDepth(b, byId))) {
-      const a = byId.get(bond.a);
-      const b = byId.get(bond.b);
-      if (a && b) draw3DBondAttachments(ctx, a, b, bond, settings);
-    }
-  }
   if (budget.overlays) draw3DBondAngleBadge(ctx, projected, visibleBonds, hoveredBondId, settings);
   drawAxisGizmo(ctx, camera, settings, width, height);
   drawMini2DStructure(ctx, sourceAtoms, bonds, settings);
@@ -664,7 +664,7 @@ function draw3DMoleculeShadow(ctx: CanvasRenderingContext2D, atoms: SceneAtom[],
   ctx.save();
   ctx.filter = budget.detailedEffects ? "blur(1.2px)" : "none";
   ctx.globalAlpha = budget.detailedEffects ? 0.54 : 0.4;
-  ctx.lineCap = "round";
+  ctx.lineCap = "butt";
   ctx.lineJoin = "round";
   ctx.strokeStyle = shadowColor;
   ctx.fillStyle = shadowColor;
@@ -937,8 +937,10 @@ function draw3DBond(ctx: CanvasRenderingContext2D, a: ProjectedAtom, b: Projecte
       ctx.lineTo(midX + tubeLightX, midY + tubeLightY);
       ctx.strokeStyle = highlightColor;
       ctx.globalAlpha = clamp(depthAlpha + 0.12, 0.4, 0.92) * focusAlpha;
+      ctx.lineCap = "round";
       ctx.lineWidth = Math.max(1.1, lineWidth * 0.32);
       ctx.stroke();
+      ctx.lineCap = "butt";
     }
   }
   ctx.restore();
@@ -961,6 +963,65 @@ function attachmentIsVisible(endpoint: ProjectedAtom, other: ProjectedAtom) {
   if (depthGap < -0.16) return false;
   const overlap = endpoint.screenRadius + other.screenRadius - Math.hypot(endpoint.sx - other.sx, endpoint.sy - other.sy);
   if (overlap > endpoint.screenRadius * 0.24 && depthGap < 0.18) return false;
+  return true;
+}
+
+function draw3DSurfaceSockets(ctx: CanvasRenderingContext2D, atoms: ProjectedAtom[], bonds: Bond[], settings: SimulationSettings, focusIds: Set<string> | null) {
+  if (settings.displayMode === "skeleton" || settings.zoom < 0.72) return;
+  const byId = new Map(atoms.map((atom) => [atom.id, atom]));
+  const colors = settings.theme === "light" ? { covalent: "#64748b", polar: "#2563eb", ionic: "#c2410c" } : { covalent: "#d8e1df", polar: "#38bdf8", ionic: "#f59e0b" };
+
+  ctx.save();
+  ctx.lineCap = "round";
+  for (const bond of bonds) {
+    const a = byId.get(bond.a);
+    const b = byId.get(bond.b);
+    if (!a || !b) continue;
+    const color = bond.kind === "ionic" ? colors.ionic : bond.kind === "polar-covalent" ? colors.polar : colors.covalent;
+    drawSurfaceSocket(ctx, a, b, color, settings, focusIds);
+    drawSurfaceSocket(ctx, b, a, color, settings, focusIds);
+  }
+  ctx.restore();
+}
+
+function drawSurfaceSocket(ctx: CanvasRenderingContext2D, atom: ProjectedAtom, other: ProjectedAtom, color: string, settings: SimulationSettings, focusIds: Set<string> | null) {
+  if (!socketIsVisible(atom, other)) return;
+  if (settings.displayMode === "simplified" && atom.symbol === "H") return;
+  const focusAlpha = focusIds && !focusIds.has(atom.id) ? 0.18 : 1;
+  const dx = other.sx - atom.sx;
+  const dy = other.sy - atom.sy;
+  const length = Math.max(0.01, Math.hypot(dx, dy));
+  const ux = dx / length;
+  const uy = dy / length;
+  const px = -uy;
+  const py = ux;
+  const x = atom.sx + ux * atom.screenRadius * 0.82;
+  const y = atom.sy + uy * atom.screenRadius * 0.82;
+  const half = clamp(atom.screenRadius * 0.08, 2.6, 5.2);
+  const alpha = clamp(0.48 + (atom.depth + 2.4) * 0.12, 0.35, 0.82) * focusAlpha;
+
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = settings.theme === "light" ? "rgba(255,255,255,0.92)" : "rgba(15,23,42,0.72)";
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.moveTo(x - px * half, y - py * half);
+  ctx.lineTo(x + px * half, y + py * half);
+  ctx.stroke();
+
+  ctx.globalAlpha = Math.min(0.92, alpha + 0.12);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.45;
+  ctx.beginPath();
+  ctx.moveTo(x - px * half, y - py * half);
+  ctx.lineTo(x + px * half, y + py * half);
+  ctx.stroke();
+}
+
+function socketIsVisible(endpoint: ProjectedAtom, other: ProjectedAtom) {
+  const depthGap = endpoint.depth - other.depth;
+  if (depthGap < -0.38) return false;
+  const overlap = endpoint.screenRadius + other.screenRadius - Math.hypot(endpoint.sx - other.sx, endpoint.sy - other.sy);
+  if (overlap > endpoint.screenRadius * 0.34 && depthGap < 0.1) return false;
   return true;
 }
 
@@ -1078,8 +1139,8 @@ function visibleBondSegment(a: ProjectedAtom, b: ProjectedAtom): BondSegment | n
   const px = -uy;
   const py = ux;
   const minVisible = clamp(Math.min(a.screenRadius, b.screenRadius) * 0.28, 7, 18);
-  const nominalStartInset = a.screenRadius * 0.92;
-  const nominalEndInset = b.screenRadius * 0.92;
+  const nominalStartInset = a.screenRadius * 0.74;
+  const nominalEndInset = b.screenRadius * 0.74;
   const available = length - nominalStartInset - nominalEndInset;
 
   let startInset = nominalStartInset;
@@ -1130,8 +1191,8 @@ function draw3DAtom(ctx: CanvasRenderingContext2D, atom: ProjectedAtom, settings
   const intensity = clamp(settings.lightIntensity, 0.25, 1.8);
   const lightX = atom.sx + r * light.x;
   const lightY = atom.sy + r * light.y;
-  const gradient = ctx.createRadialGradient(lightX, lightY, 1, atom.sx + r * 0.15, atom.sy + r * 0.18, r * 1.12);
-  gradient.addColorStop(0, mixHex(settings.lightColor, "#ffffff", 0.55));
+  const gradient = ctx.createRadialGradient(lightX, lightY, Math.max(3, r * 0.22), atom.sx + r * 0.15, atom.sy + r * 0.18, r * 1.12);
+  gradient.addColorStop(0, mixHex(settings.lightColor, "#ffffff", 0.86));
   gradient.addColorStop(0.2, data.color);
   gradient.addColorStop(0.72, data.color);
   gradient.addColorStop(1, settings.theme === "light" ? "#d8e2df" : "#111827");
@@ -1156,12 +1217,6 @@ function draw3DAtom(ctx: CanvasRenderingContext2D, atom: ProjectedAtom, settings
     ctx.beginPath();
     ctx.arc(atom.sx, atom.sy, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = Math.min(1, depthAlpha + 0.08);
-    ctx.fillStyle = hexToRgba(mixHex(settings.lightColor, "#ffffff", 0.35), settings.theme === "light" ? 0.84 : 0.68);
-    ctx.beginPath();
-    ctx.arc(lightX, lightY, Math.max(4, r * 0.18), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = depthAlpha;
   }
   ctx.shadowBlur = 0;
   ctx.filter = "none";

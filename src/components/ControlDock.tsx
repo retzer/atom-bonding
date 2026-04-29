@@ -21,70 +21,79 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
         <SlidersHorizontal size={18} />
         <h2>Controls</h2>
       </div>
-      <div className="control-grid">
-        <Slider label="Temperature" title="Higher temperature makes atoms move faster." value={settings.temperature} min={0.1} max={1.8} step={0.05} onChange={(value) => onSetting("temperature", value)} />
-        <Slider label="Speed" title="Overall simulation playback speed." value={settings.speed} min={0.2} max={2.4} step={0.05} onChange={(value) => onSetting("speed", value)} />
-        <Slider label="Collision" title="How strongly atoms bounce when they do not bond." value={settings.collisionStrength} min={0.2} max={1.4} step={0.05} onChange={(value) => onSetting("collisionStrength", value)} />
-        <Slider label="EN difference" title="Emphasizes electronegativity difference when classifying bonds." value={settings.electronegativityEmphasis} min={0.7} max={1.5} step={0.05} onChange={(value) => onSetting("electronegativityEmphasis", value)} />
-        <Slider label="Bond distance" title="How close atoms must be before bond rules are tested." value={settings.bondingDistance} min={1.45} max={2.8} step={0.05} onChange={(value) => onSetting("bondingDistance", value)} />
-        <Slider label="Relaxation" title="How strongly VSEPR angles, bond lengths, and atom spacing settle the molecule." value={settings.relaxationStrength} min={0} max={1.2} step={0.05} onChange={(value) => onSetting("relaxationStrength", value)} />
-        <Slider label="Zoom" title="Scale the simulation viewport without changing the chemistry." value={settings.zoom} min={0.55} max={2.2} step={0.05} onChange={(value) => onSetting("zoom", value)} />
+      <div className="control-section">
+        <div className="control-section-title">Physics</div>
+        <div className="control-grid compact-grid">
+          <Slider label="Temperature" title="Higher temperature makes atoms move faster." value={settings.temperature} min={0.1} max={1.8} step={0.05} onChange={(value) => onSetting("temperature", value)} />
+          <Slider label="Speed" title="Overall simulation playback speed." value={settings.speed} min={0.2} max={2.4} step={0.05} onChange={(value) => onSetting("speed", value)} />
+          <Slider label="Collision" title="How strongly atoms bounce when they do not bond." value={settings.collisionStrength} min={0.2} max={1.4} step={0.05} onChange={(value) => onSetting("collisionStrength", value)} />
+          <Slider label="EN difference" title="Emphasizes electronegativity difference when classifying bonds." value={settings.electronegativityEmphasis} min={0.7} max={1.5} step={0.05} onChange={(value) => onSetting("electronegativityEmphasis", value)} />
+          <Slider label="Bond distance" title="How close atoms must be before bond rules are tested." value={settings.bondingDistance} min={1.45} max={2.8} step={0.05} onChange={(value) => onSetting("bondingDistance", value)} />
+          <Slider label="Relaxation" title="How strongly VSEPR angles, bond lengths, and atom spacing settle the molecule." value={settings.relaxationStrength} min={0} max={1.2} step={0.05} onChange={(value) => onSetting("relaxationStrength", value)} />
+          <Slider label="Zoom" title="Scale the simulation viewport without changing the chemistry." value={settings.zoom} min={0.55} max={2.2} step={0.05} onChange={(value) => onSetting("zoom", value)} />
+        </div>
       </div>
-      <div className="element-board" aria-label="Choose an atom type by group">
-        {elementGroups.map((group) => (
-          <div className="element-group" key={group.id}>
-            <div className="element-group-title">{group.label}</div>
-            <div className="element-picker">
-              {group.symbols.map((symbol) => {
-                const atom = atomData[symbol];
-                return (
-                  <button
-                    key={atom.symbol}
-                    className={settings.selectedElements.includes(atom.symbol) ? "selected" : ""}
-                    style={{ "--atom-color": atom.color } as CSSProperties}
-                    title={`${atom.name}: ${atom.behavior}`}
-                    onClick={() => selectElement(atom.symbol)}
-                  >
-                    {atom.symbol}
-                  </button>
-                );
-              })}
+      <div className="control-section">
+        <div className="control-section-title">Elements</div>
+        <div className="element-board" aria-label="Choose an atom type by group">
+          {elementGroups.map((group) => (
+            <div className="element-group" key={group.id}>
+              <div className="element-group-title">{group.label}</div>
+              <div className="element-picker">
+                {group.symbols.map((symbol) => {
+                  const atom = atomData[symbol];
+                  return (
+                    <button
+                      key={atom.symbol}
+                      className={settings.selectedElements.includes(atom.symbol) ? "selected" : ""}
+                      style={{ "--atom-color": atom.color } as CSSProperties}
+                      title={`${atom.name}: ${atom.behavior}`}
+                      onClick={() => selectElement(atom.symbol)}
+                    >
+                      {atom.symbol}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-      <div className="spawn-row">
-        <button className="spawn-button primary" title="Add one selected atom to the free simulation" onClick={onSpawnAtoms}>
-          <Plus size={16} />
-          Spawn one atom
-        </button>
-        <button className="spawn-button" title="Copy a shareable link for the current scene" onClick={onShareScene}>
-          <Share2 size={16} />
-          Share scene
-        </button>
-      </div>
-      <div className="visual-row" aria-label="Visual model">
-        <button className={settings.visualStyle === "detailed" ? "visual-choice active" : "visual-choice"} title="Detailed model with shaded atoms and glow effects" onClick={() => onSetting("visualStyle", "detailed")}>
-          <Sparkles size={16} />
-          Glow
-        </button>
-        <button className={settings.visualStyle === "simple-neutral" ? "visual-choice active" : "visual-choice"} title="Simplified model with flat neutral atoms and no glow" onClick={() => onSetting("visualStyle", "simple-neutral")}>
-          Simple
-        </button>
-        <button className={settings.visualStyle === "simple-colored" ? "visual-choice active" : "visual-choice"} title="Simplified model with flat element colors and no glow" onClick={() => onSetting("visualStyle", "simple-colored")}>
-          <Palette size={16} />
-          Color
-        </button>
-      </div>
-      <div className="projection-row" aria-label="Structure detail">
-        {(["full", "simplified", "skeleton"] as const).map((mode) => (
-          <button key={mode} className={settings.displayMode === mode ? "visual-choice active" : "visual-choice"} title={`Use ${mode} structure display`} onClick={() => onSetting("displayMode", mode)}>
-            {mode[0].toUpperCase() + mode.slice(1)}
+      <div className="control-section control-section-inline">
+        <div className="spawn-row">
+          <button className="spawn-button primary" title="Add one selected atom to the free simulation" onClick={onSpawnAtoms}>
+            <Plus size={16} />
+            Spawn one atom
           </button>
-        ))}
+          <button className="spawn-button" title="Copy a shareable link for the current scene" onClick={onShareScene}>
+            <Share2 size={16} />
+            Share scene
+          </button>
+        </div>
+        <div className="visual-row" aria-label="Visual model">
+          <button className={settings.visualStyle === "detailed" ? "visual-choice active" : "visual-choice"} title="Detailed model with shaded atoms and glow effects" onClick={() => onSetting("visualStyle", "detailed")}>
+            <Sparkles size={16} />
+            Glow
+          </button>
+          <button className={settings.visualStyle === "simple-neutral" ? "visual-choice active" : "visual-choice"} title="Simplified model with flat neutral atoms and no glow" onClick={() => onSetting("visualStyle", "simple-neutral")}>
+            Simple
+          </button>
+          <button className={settings.visualStyle === "simple-colored" ? "visual-choice active" : "visual-choice"} title="Simplified model with flat element colors and no glow" onClick={() => onSetting("visualStyle", "simple-colored")}>
+            <Palette size={16} />
+            Color
+          </button>
+        </div>
+        <div className="projection-row" aria-label="Structure detail">
+          {(["full", "simplified", "skeleton"] as const).map((mode) => (
+            <button key={mode} className={settings.displayMode === mode ? "visual-choice active" : "visual-choice"} title={`Use ${mode} structure display`} onClick={() => onSetting("displayMode", mode)}>
+              {mode[0].toUpperCase() + mode.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
       {settings.geometry3D && (
-        <>
+        <div className="control-section">
+          <div className="control-section-title">3D View</div>
           <div className="projection-row" aria-label="3D projection">
             <button className={settings.projectionMode === "orthographic" ? "visual-choice active" : "visual-choice"} title="Flatten depth for a clean structural comparison" onClick={() => onSetting("projectionMode", "orthographic")}>
               Ortho
@@ -116,8 +125,10 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
               <input type="color" value={settings.lightColor} onChange={(event) => onSetting("lightColor", event.target.value)} />
             </label>
           </div>
-        </>
+        </div>
       )}
+      <div className="control-section">
+        <div className="control-section-title">Overlays</div>
       <div className="toggle-row">
         <button className={settings.showShells ? "toggle active" : "toggle"} title="Show or hide electron shells" onClick={() => onSetting("showShells", !settings.showShells)}>
           {settings.showShells ? <Eye size={16} /> : <EyeOff size={16} />}
@@ -175,6 +186,7 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
           <ZoomIn size={16} />
           100%
         </button>
+      </div>
       </div>
     </section>
   );

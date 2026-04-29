@@ -224,6 +224,7 @@ button:disabled {
   height: clamp(520px, calc(100vh - 250px), 760px);
   min-height: 520px;
   overflow: hidden;
+  overscroll-behavior: contain;
   touch-action: none;
 }
 
@@ -369,12 +370,17 @@ button:disabled {
   padding: 14px;
 }
 
+.control-dock {
+  display: grid;
+  gap: 10px;
+}
+
 .dock-title,
 .section-heading {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .dock-title h2,
@@ -389,15 +395,51 @@ button:disabled {
   color: #5eead4;
 }
 
+.control-section {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.app-shell.light .control-section {
+  border-color: rgba(24, 34, 30, 0.08);
+  background: rgba(24, 34, 30, 0.025);
+}
+
+.control-section-title {
+  color: #a7b2ad;
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.app-shell.light .control-section-title {
+  color: #61706a;
+}
+
+.control-section-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .control-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 14px;
+}
+
+.compact-grid {
+  grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
 }
 
 .slider {
   display: grid;
-  gap: 7px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -430,17 +472,19 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 13px;
+  margin-top: 0;
 }
 
 .element-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   align-items: stretch;
+  gap: 8px;
 }
 
 .element-group {
-  flex: 1 1 138px;
-  min-width: 132px;
-  padding: 8px;
+  min-width: 0;
+  padding: 7px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.035);
@@ -456,12 +500,12 @@ button:disabled {
 .element-picker {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .element-picker button {
-  min-width: 38px;
-  min-height: 34px;
+  min-width: 35px;
+  min-height: 31px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   color: #f8fafc;
@@ -473,7 +517,7 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .element-picker button.selected {
@@ -489,7 +533,7 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
+  min-height: 36px;
   gap: 7px;
   padding: 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -497,6 +541,33 @@ button:disabled {
   background: rgba(255, 255, 255, 0.05);
   font-size: 0.83rem;
   font-weight: 850;
+}
+
+.lighting-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.color-slider {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.color-slider span {
+  min-width: 0;
+}
+
+.color-slider input[type="color"] {
+  width: 44px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-shell.light .color-slider input[type="color"] {
+  border-color: rgba(24, 34, 30, 0.14);
+  background: rgba(24, 34, 30, 0.045);
 }
 
 .spawn-button.primary {
