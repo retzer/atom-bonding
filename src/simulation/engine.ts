@@ -150,10 +150,11 @@ export function createPresetState(width: number, height: number, preset: Molecul
 }
 
 export function stepSimulation(state: SimulationState, settings: SimulationSettings, width: number, height: number, rawDt: number): SimulationState {
-  const dt = Math.min(0.04, rawDt * settings.speed * (settings.geometry3D ? 0.5 : 1));
-  const thermalMotion = settings.geometry3D ? settings.temperature * 0.12 : settings.temperature;
-  const collisionStrength = settings.geometry3D ? settings.collisionStrength * 0.18 : settings.collisionStrength;
-  const motionScale = settings.geometry3D ? 9 + settings.temperature * 2 : 24 + settings.temperature * 8;
+  const rigid = settings.geometryMode === "rigid";
+  const dt = Math.min(0.04, rawDt * settings.speed * (rigid ? settings.geometry3D ? 0.42 : 0.58 : settings.geometry3D ? 0.5 : 1));
+  const thermalMotion = rigid ? settings.temperature * 0.018 : settings.geometry3D ? settings.temperature * 0.12 : settings.temperature;
+  const collisionStrength = rigid ? settings.collisionStrength * (settings.geometry3D ? 0.045 : 0.08) : settings.geometry3D ? settings.collisionStrength * 0.18 : settings.collisionStrength;
+  const motionScale = rigid ? settings.geometry3D ? 7 : 11 : settings.geometry3D ? 9 + settings.temperature * 2 : 24 + settings.temperature * 8;
   const atoms = state.atoms.map((atom) => ({ ...atom, bonds: [] as string[] }));
   const bonds = state.bonds.map((bond) => ({ ...bond }));
   const effects = state.effects
@@ -173,19 +174,20 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
 
   for (const atom of atoms) {
     if (atom.guided && atom.targetX !== undefined && atom.targetY !== undefined) {
-      atom.vx += (atom.targetX - atom.x) * 0.34 * dt;
-      atom.vy += (atom.targetY - atom.y) * 0.34 * dt;
+      const targetPull = rigid ? settings.geometry3D ? 0.72 : 0.9 : 0.34;
+      atom.vx += (atom.targetX - atom.x) * targetPull * dt;
+      atom.vy += (atom.targetY - atom.y) * targetPull * dt;
       if (settings.geometry3D && atom.targetZ !== undefined) {
-        atom.vz = (atom.vz ?? 0) + (atom.targetZ - (atom.z ?? 0)) * 0.34 * dt;
+        atom.vz = (atom.vz ?? 0) + (atom.targetZ - (atom.z ?? 0)) * targetPull * dt;
       }
     } else {
       atom.vx += rand(-1, 1) * thermalMotion * 8 * dt;
       atom.vy += rand(-1, 1) * thermalMotion * 8 * dt;
       atom.vz = (atom.vz ?? 0) + rand(-1, 1) * thermalMotion * 1.8 * dt;
     }
-    atom.vx *= settings.geometry3D ? 0.94 : 0.996;
-    atom.vy *= settings.geometry3D ? 0.94 : 0.996;
-    atom.vz = (atom.vz ?? 0) * (settings.geometry3D ? 0.9 : 0.992);
+    atom.vx *= rigid ? settings.geometry3D ? 0.88 : 0.78 : settings.geometry3D ? 0.94 : 0.996;
+    atom.vy *= rigid ? settings.geometry3D ? 0.88 : 0.78 : settings.geometry3D ? 0.94 : 0.996;
+    atom.vz = (atom.vz ?? 0) * (settings.geometry3D ? rigid ? 0.84 : 0.9 : rigid ? 0.78 : 0.992);
     atom.x += atom.vx * dt * motionScale;
     atom.y += atom.vy * dt * motionScale;
     atom.z = settings.geometry3D ? (atom.z ?? 0) + (atom.vz ?? 0) * dt * motionScale : 0;
@@ -208,7 +210,7 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     const dy = b.y - a.y;
     const dist = Math.max(0.01, Math.hypot(dx, dy));
     const target = bond.kind === "metallic" ? bond.length : bond.length * (1 - (bond.order - 1) * 0.1);
-    const correction = (dist - target) * bond.strength;
+    const correction = (dist - target) * bond.strength * (rigid ? settings.geometry3D ? 1.2 : 1.75 : 1);
     const nx = dx / dist;
     const ny = dy / dist;
     a.x += nx * correction;
@@ -217,10 +219,12 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     b.y -= ny * correction;
     const sharedVx = (a.vx + b.vx) * 0.5;
     const sharedVy = (a.vy + b.vy) * 0.5;
-    a.vx = a.vx * 0.88 + sharedVx * 0.12;
-    a.vy = a.vy * 0.88 + sharedVy * 0.12;
-    b.vx = b.vx * 0.88 + sharedVx * 0.12;
-    b.vy = b.vy * 0.88 + sharedVy * 0.12;
+    const selfVelocity = rigid ? 0.72 : 0.88;
+    const sharedVelocity = 1 - selfVelocity;
+    a.vx = a.vx * selfVelocity + sharedVx * sharedVelocity;
+    a.vy = a.vy * selfVelocity + sharedVy * sharedVelocity;
+    b.vx = b.vx * selfVelocity + sharedVx * sharedVelocity;
+    b.vy = b.vy * selfVelocity + sharedVy * sharedVelocity;
   }
 
   for (let i = 0; i < atoms.length; i += 1) {

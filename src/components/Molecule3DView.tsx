@@ -9,6 +9,7 @@ import { analyzeAtomGeometry } from "../simulation/vsepr";
 type Props = {
   state: SimulationState;
   settings: SimulationSettings;
+  running: boolean;
   width: number;
   height: number;
   onResize: (width: number, height: number) => void;
@@ -59,7 +60,7 @@ const templates: Record<string, Vec3[]> = {
   AX6: [{ x: 1, y: 0, z: 0 }, { x: -1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: -1, z: 0 }, { x: 0, y: 0, z: 1 }, { x: 0, y: 0, z: -1 }]
 };
 
-export function Molecule3DView({ state, settings, width, height, onResize, onSelectAtom, onZoom }: Props) {
+export function Molecule3DView({ state, settings, running, width, height, onResize, onSelectAtom, onZoom }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const dragStart = useRef<{ x: number; y: number; yaw: number; pitch: number; panX: number; panY: number; mode: "rotate" | "pan" } | null>(null);
@@ -70,7 +71,7 @@ export function Molecule3DView({ state, settings, width, height, onResize, onSel
   const [hoveredBondId, setHoveredBondId] = useState<string | null>(null);
   const sceneAtoms = useMemo(
     () => buildSceneAtoms(state.atoms, state.bonds, settings, state.time),
-    [settings.collisionStrength, settings.geometryAssist, settings.relaxationStrength, settings.speed, settings.temperature, state.atoms, state.bonds, state.time]
+    [settings.collisionStrength, settings.geometryAssist, settings.geometryMode, settings.relaxationStrength, settings.speed, settings.temperature, state.atoms, state.bonds, state.time]
   );
 
   useEffect(() => {
@@ -109,6 +110,13 @@ export function Molecule3DView({ state, settings, width, height, onResize, onSel
   }, [settings.cameraPreset]);
 
   useEffect(() => {
+    if (!running || !sceneAtoms.length) {
+      if (spinFrame.current !== null) {
+        window.cancelAnimationFrame(spinFrame.current);
+        spinFrame.current = null;
+      }
+      return;
+    }
     const tick = () => {
       if (!dragStart.current && sceneAtoms.length) {
         setCamera((current) => ({ ...current, yaw: current.yaw + 0.0022 }));
@@ -118,8 +126,9 @@ export function Molecule3DView({ state, settings, width, height, onResize, onSel
     spinFrame.current = window.requestAnimationFrame(tick);
     return () => {
       if (spinFrame.current !== null) window.cancelAnimationFrame(spinFrame.current);
+      spinFrame.current = null;
     };
-  }, [sceneAtoms.length]);
+  }, [running, sceneAtoms.length]);
 
   const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -211,6 +220,13 @@ export function Molecule3DView({ state, settings, width, height, onResize, onSel
         <button title="Zoom in" onClick={() => setZoom(settings.zoom + 0.12)}><ZoomIn size={17} /></button>
         <button title="Reset view" onClick={() => { setZoom(1); setCamera({ yaw: -0.62, pitch: 0.46, panX: 0, panY: 0 }); }}><Maximize2 size={17} /></button>
       </div>
+      <aside className="camera-guide" aria-label="Camera controls guide">
+        <strong>Camera</strong>
+        <span><kbd>Drag</kbd> Rotate</span>
+        <span><kbd>Shift</kbd><kbd>Drag</kbd> Pan</span>
+        <span><kbd>Wheel</kbd> Zoom</span>
+        <span><kbd>Right drag</kbd> Pan</span>
+      </aside>
       <div className="canvas-readout">
         <span><Box size={13} /> VSEPR 3D renderer</span>
         <span>{projectionLabel(settings.projectionMode)}</span>
@@ -252,6 +268,7 @@ function buildSceneAtoms(atoms: AtomParticle[], bonds: Bond[], settings: Simulat
 }
 
 function apply3DControlResponse(placed: Map<string, Vec3>, atoms: AtomParticle[], bonds: Bond[], settings: SimulationSettings, time: number) {
+  if (settings.geometryMode === "rigid") return;
   const relaxation = clamp(settings.relaxationStrength / 1.2, 0, 1);
   const livePoints = normalizedLivePoints(atoms);
   const liveBlend = settings.geometryAssist
@@ -460,7 +477,8 @@ function draw3D(ctx: CanvasRenderingContext2D, atoms: SceneAtom[], sourceAtoms: 
   const projected = applyProjectedEmphasis(projectAtoms(atoms, camera, width, height, settings), interaction, settings);
   const budget = renderBudgetFor(projected);
   const showChemistryDetail = settings.analysisMode === "chemistry" && detailLevel === "detail";
-  const lonePairs = showChemistryDetail && budget.overlays && (settings.highlightLonePairs || settings.showElectronRegions) ? projectLonePairs(lonePairClouds(atoms, bonds), camera, width, height, settings) : [];
+  const showLonePairDetail = budget.overlays && settings.highlightLonePairs && detailLevel !== "abstract";
+  const lonePairs = (showLonePairDetail || showChemistryDetail && settings.showElectronRegions) ? projectLonePairs(lonePairClouds(atoms, bonds), camera, width, height, settings) : [];
   const byId = new Map(projected.map((atom) => [atom.id, atom]));
   const visibleBonds = structuralBonds(bonds).filter((bond) => bondVisibleInMode(bond, byId, settings));
   draw3DMoleculeShadow(ctx, atoms, bonds, settings, camera, width, height, budget);
@@ -480,16 +498,7 @@ function draw3D(ctx: CanvasRenderingContext2D, atoms: SceneAtom[], sourceAtoms: 
     }
     if (settings.showNetDipole) drawNetDipole3D(ctx, projected, visibleBonds, settings);
   }
-  for (const cloud of [...lonePairs].sort((a, b) => a.depth - b.depth)) {
-    const center = byId.get(cloud.centerId);
-    if (center) drawLonePairCloud(ctx, cloud, center, settings);
-  }
-  for (const atom of depthSortedAtoms(projected.filter((atom) => atomVisibleInMode(atom, settings)), visibleBonds)) {
-    draw3DAtom(ctx, atom, settings, budget, interaction);
-  }
-  for (const atom of frontBondedAtoms(projected.filter((atom) => atomVisibleInMode(atom, settings)), visibleBonds)) {
-    draw3DAtom(ctx, atom, settings, budget, interaction, true);
-  }
+  drawDepthSortedStructure(ctx, projected, lonePairs, visibleBonds, settings, budget, interaction, time, byId);
   if (showChemistryDetail && settings.visualStyle === "detailed" && budget.detailedEffects) draw3DBondEndpointCaps(ctx, projected, visibleBonds, settings, interaction.focusIds);
   if (showChemistryDetail && settings.showElectronFlow && budget.overlays) drawElectronFlow3D(ctx, projected, visibleBonds, settings, time);
   if (budget.overlays) draw3DBondAngleBadge(ctx, projected, visibleBonds, hoveredBondId, settings);
@@ -653,6 +662,43 @@ function emphasisScaleForAtom(atom: ProjectedAtom, interaction: InteractionConte
   return scale;
 }
 
+function drawDepthSortedStructure(
+  ctx: CanvasRenderingContext2D,
+  atoms: ProjectedAtom[],
+  lonePairs: ProjectedLonePair[],
+  bonds: Bond[],
+  settings: SimulationSettings,
+  budget: RenderBudget,
+  interaction: InteractionContext,
+  time: number,
+  byId: Map<string, ProjectedAtom>
+) {
+  const visibleAtoms = atoms.filter((atom) => atomVisibleInMode(atom, settings));
+  const atomIds = new Set(visibleAtoms.map((atom) => atom.id));
+  const items = [
+    ...visibleAtoms.map((atom) => ({ kind: "atom" as const, id: atom.id, depth: atomPaintDepth(atom, atoms, bonds), atom })),
+    ...lonePairs
+      .filter((cloud) => atomIds.has(cloud.centerId))
+      .map((cloud) => ({ kind: "lonePair" as const, id: cloud.id, depth: lonePairPaintDepth(cloud, byId.get(cloud.centerId)), cloud }))
+  ].sort((a, b) => a.depth - b.depth);
+
+  for (const item of items) {
+    if (item.kind === "atom") {
+      draw3DAtom(ctx, item.atom, settings, budget, interaction);
+      continue;
+    }
+    const center = byId.get(item.cloud.centerId);
+    if (center) drawLonePairCloud(ctx, item.cloud, center, settings, time);
+  }
+}
+
+function lonePairPaintDepth(cloud: ProjectedLonePair, center: ProjectedAtom | undefined) {
+  const ownSurface = cloud.depth + cloud.screenRadius * 0.034;
+  if (!center) return ownSurface;
+  const outwardDepth = cloud.depth - center.depth;
+  return ownSurface + clamp(outwardDepth, -0.5, 0.5) * 1.4;
+}
+
 function depthSortedAtoms(atoms: ProjectedAtom[], bonds: Bond[]) {
   return [...atoms].sort((a, b) => atomPaintDepth(a, atoms, bonds) - atomPaintDepth(b, atoms, bonds));
 }
@@ -706,20 +752,20 @@ function lonePairClouds(atoms: SceneAtom[], bonds: Bond[]): LonePairCloud[] {
   for (const atom of atoms) {
     const analysis = analyzeAtomGeometry(atom, atoms, bonds);
     if (!analysis?.lonePairs) continue;
-    if ((componentSize.get(atom.id) ?? atoms.length) > 6) continue;
-    if (analysis.bondedAtoms < 2) continue;
-    if (!["AX2E", "AX2E2", "AX3E"].includes(analysis.axe)) continue;
-    const vectors = lonePairVectorsFor(analysis.axe, analysis.lonePairs, graph.neighborsById.get(atom.id)?.length ?? 0);
+    if ((componentSize.get(atom.id) ?? atoms.length) > 80) continue;
+    const neighbors = graph.neighborsById.get(atom.id) ?? [];
+    const vectors = lonePairDirectionsFor(atom, neighbors as SceneAtom[], analysis.lonePairs);
     vectors.forEach((vector, index) => {
       const direction = normalizeVec(vector);
+      const offset = 0.46 + Math.min(0.16, atom.radius / 190);
       clouds.push({
         id: `lp-${atom.id}-${index}`,
         centerId: atom.id,
         direction,
-        x: atom.x + direction.x * 0.64,
-        y: atom.y + direction.y * 0.64,
-        z: atom.z + direction.z * 0.64,
-        radius: Math.max(10, atom.radius * 0.34)
+        x: atom.x + direction.x * offset,
+        y: atom.y + direction.y * offset,
+        z: atom.z + direction.z * offset,
+        radius: Math.max(15, atom.radius * 0.5)
       });
     });
   }
@@ -749,16 +795,46 @@ function componentSizesByAtom(atoms: SceneAtom[], bonds: Bond[]) {
   return sizes;
 }
 
-function lonePairVectorsFor(axe: string, lonePairs: number, bondedAtoms: number): Vec3[] {
-  const map: Record<string, Vec3[]> = {
-    AX3E: [{ x: 0, y: 0, z: 1 }],
-    AX2E2: [{ x: 0.64, y: -0.5, z: 0.58 }, { x: -0.64, y: -0.5, z: 0.58 }],
-    AX2E: [{ x: 0, y: -1, z: 0 }],
-    AX1E2: [{ x: 0.72, y: 0.35, z: 0.6 }, { x: -0.72, y: 0.35, z: 0.6 }],
-    AX1E3: [{ x: 1, y: 0, z: 0 }, { x: -0.5, y: 0.86, z: 0 }, { x: -0.5, y: -0.86, z: 0 }]
+function lonePairDirectionsFor(atom: SceneAtom, neighbors: SceneAtom[], lonePairs: number): Vec3[] {
+  if (lonePairs <= 0) return [];
+  const bondSum = neighbors.reduce((sum, neighbor) => {
+    const vector = normalizeVec({ x: neighbor.x - atom.x, y: neighbor.y - atom.y, z: neighbor.z - atom.z });
+    return { x: sum.x + vector.x, y: sum.y + vector.y, z: sum.z + vector.z };
+  }, { x: 0, y: 0, z: 0 });
+  const fallback = atom.symbol === "O" || atom.symbol === "S" ? { x: 0, y: -0.82, z: 0.58 } : { x: 0, y: -0.35, z: 0.94 };
+  const away = Math.hypot(bondSum.x, bondSum.y, bondSum.z) > 0.02
+    ? normalizeVec({ x: -bondSum.x, y: -bondSum.y, z: -bondSum.z })
+    : normalizeVec(fallback);
+  const side = perpendicularTo(away);
+
+  if (lonePairs === 1) return [away];
+  if (lonePairs === 2) {
+    return [
+      normalizeVec({ x: away.x * 0.82 + side.x * 0.56, y: away.y * 0.82 + side.y * 0.56, z: away.z * 0.82 + side.z * 0.56 }),
+      normalizeVec({ x: away.x * 0.82 - side.x * 0.56, y: away.y * 0.82 - side.y * 0.56, z: away.z * 0.82 - side.z * 0.56 })
+    ];
+  }
+
+  return Array.from({ length: lonePairs }, (_, index) => {
+    const angle = index * Math.PI * 2 / lonePairs;
+    const spread = Math.cos(angle) * 0.58;
+    const lift = Math.sin(angle) * 0.42;
+    return normalizeVec({
+      x: away.x * 0.74 + side.x * spread,
+      y: away.y * 0.74 + side.y * spread,
+      z: away.z * 0.74 + lift
+    });
+  });
+}
+
+function perpendicularTo(vector: Vec3): Vec3 {
+  const primary = Math.abs(vector.z) < 0.78 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 };
+  const cross = {
+    x: vector.y * primary.z - vector.z * primary.y,
+    y: vector.z * primary.x - vector.x * primary.z,
+    z: vector.x * primary.y - vector.y * primary.x
   };
-  const vectors = map[axe] ?? radialVectors(Math.max(lonePairs + bondedAtoms, lonePairs)).slice(bondedAtoms, bondedAtoms + lonePairs);
-  return vectors.slice(0, lonePairs);
+  return normalizeVec(cross);
 }
 
 function projectionProfile(mode: ProjectionMode) {
@@ -961,8 +1037,8 @@ function drawAggregateMoleculeShadow(ctx: CanvasRenderingContext2D, atoms: Proje
   ctx.restore();
 }
 
-function drawLonePairCloud(ctx: CanvasRenderingContext2D, cloud: ProjectedLonePair, center: ProjectedAtom, settings: SimulationSettings) {
-  const r = cloud.screenRadius;
+function drawLonePairCloud(ctx: CanvasRenderingContext2D, cloud: ProjectedLonePair, center: ProjectedAtom, settings: SimulationSettings, time: number) {
+  const r = clamp(cloud.screenRadius, 12, 27);
   const dx = cloud.sx - center.sx;
   const dy = cloud.sy - center.sy;
   const length = Math.max(0.01, Math.hypot(dx, dy));
@@ -970,26 +1046,98 @@ function drawLonePairCloud(ctx: CanvasRenderingContext2D, cloud: ProjectedLonePa
   const uy = dy / length;
   const px = -uy;
   const py = ux;
-  const tipX = center.sx + ux * center.screenRadius * 0.82;
-  const tipY = center.sy + uy * center.screenRadius * 0.82;
-  const bulbX = cloud.sx + ux * r * 0.18;
-  const bulbY = cloud.sy + uy * r * 0.18;
-  const gradient = ctx.createRadialGradient(bulbX - ux * r * 0.35 - px * r * 0.18, bulbY - uy * r * 0.35 - py * r * 0.18, 1, bulbX, bulbY, r * 1.35);
-  gradient.addColorStop(0, settings.theme === "light" ? "rgba(255,255,255,0.72)" : "rgba(226,232,240,0.5)");
-  gradient.addColorStop(0.48, settings.theme === "light" ? "rgba(14,165,233,0.24)" : "rgba(56,189,248,0.24)");
-  gradient.addColorStop(1, "rgba(14,165,233,0)");
+  const tipX = center.sx + ux * center.screenRadius * 0.78;
+  const tipY = center.sy + uy * center.screenRadius * 0.78;
+  const lobeLength = r * 1.12;
+  const lobeWidth = r * 1.12;
+  const neckWidth = r * 0.42;
+  const bulbX = tipX + ux * lobeLength;
+  const bulbY = tipY + uy * lobeLength;
+  const baseX = tipX + ux * lobeLength * 0.42;
+  const baseY = tipY + uy * lobeLength * 0.42;
+  const alpha = clamp(0.58 + (cloud.depth + 2.4) * 0.11, 0.44, 0.88);
+  const bodyOuter = settings.theme === "light" ? "#c8b7f2" : "#b6a3f4";
+  const bodyInner = settings.theme === "light" ? "#efe9ff" : "#ddd3ff";
+  const bodyEdge = settings.theme === "light" ? "#9f8bd8" : "#c4b5fd";
+  const gradient = ctx.createRadialGradient(bulbX - ux * r * 0.34 - px * r * 0.18, bulbY - uy * r * 0.34 - py * r * 0.18, 1, bulbX, bulbY, r * 1.42);
+  gradient.addColorStop(0, hexToRgba("#ffffff", 0.78));
+  gradient.addColorStop(0.26, hexToRgba(bodyInner, 0.84));
+  gradient.addColorStop(0.72, hexToRgba(bodyOuter, 0.78));
+  gradient.addColorStop(1, hexToRgba(bodyEdge, 0.44));
+
   ctx.save();
-  ctx.globalAlpha = clamp(0.34 + (cloud.depth + 2.4) * 0.09, 0.22, 0.64);
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = settings.theme === "light" ? "rgba(124,58,237,0.22)" : "rgba(196,181,253,0.28)";
+  ctx.shadowBlur = 5;
   ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.moveTo(tipX, tipY);
-  ctx.bezierCurveTo(tipX + ux * r * 0.72 + px * r * 0.1, tipY + uy * r * 0.72 + py * r * 0.1, bulbX + px * r * 0.92, bulbY + py * r * 0.92, bulbX + ux * r * 0.32, bulbY + uy * r * 0.32);
-  ctx.bezierCurveTo(bulbX - px * r * 0.92, bulbY - py * r * 0.92, tipX + ux * r * 0.72 - px * r * 0.1, tipY + uy * r * 0.72 - py * r * 0.1, tipX, tipY);
+  ctx.bezierCurveTo(
+    baseX + px * neckWidth,
+    baseY + py * neckWidth,
+    bulbX + px * lobeWidth,
+    bulbY + py * lobeWidth,
+    bulbX + ux * r * 0.04,
+    bulbY + uy * r * 0.04
+  );
+  ctx.bezierCurveTo(
+    bulbX - px * lobeWidth,
+    bulbY - py * lobeWidth,
+    baseX - px * neckWidth,
+    baseY - py * neckWidth,
+    tipX,
+    tipY
+  );
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = settings.theme === "light" ? "rgba(14,116,144,0.22)" : "rgba(125,211,252,0.24)";
-  ctx.lineWidth = 1.2;
+
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = hexToRgba(bodyEdge, settings.theme === "light" ? 0.46 : 0.56);
+  ctx.lineWidth = 1.25;
   ctx.stroke();
+
+  ctx.globalAlpha = alpha * 0.42;
+  ctx.strokeStyle = "rgba(255,255,255,0.75)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(baseX + px * r * 0.2, baseY + py * r * 0.2);
+  ctx.quadraticCurveTo(bulbX - ux * r * 0.08 + px * r * 0.46, bulbY - uy * r * 0.08 + py * r * 0.46, bulbX + px * r * 0.5, bulbY + py * r * 0.5);
+  ctx.stroke();
+
+  const seed = atomSeed(cloud.id);
+  const phase = (time * 0.82 + seed) % 1;
+  const blink = phase > 0.84 ? Math.max(0.08, Math.abs(phase - 0.92) / 0.08) : 1;
+  const eyeCenterX = tipX + ux * lobeLength * 0.7;
+  const eyeCenterY = tipY + uy * lobeLength * 0.7;
+  const eyeGap = lobeWidth * 0.48;
+  const eyeRadius = clamp(r * 0.15, 2.4, 4.4);
+  drawBlinkingElectron(ctx, eyeCenterX + px * eyeGap * 0.5, eyeCenterY + py * eyeGap * 0.5, eyeRadius, blink, alpha);
+  drawBlinkingElectron(ctx, eyeCenterX - px * eyeGap * 0.5, eyeCenterY - py * eyeGap * 0.5, eyeRadius, blink, alpha);
+  ctx.restore();
+}
+
+function drawBlinkingElectron(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, blink: number, alpha: number) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = "#111827";
+  if (blink > 0.22) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, radius, radius * blink, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = alpha * 0.42;
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.beginPath();
+    ctx.arc(x - radius * 0.28, y - radius * 0.32, Math.max(0.7, radius * 0.28), 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = Math.max(1.4, radius * 0.48);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x - radius * 0.72, y);
+    ctx.lineTo(x + radius * 0.72, y);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -1078,13 +1226,15 @@ function draw3DBond(ctx: CanvasRenderingContext2D, a: ProjectedAtom, b: Projecte
   const segment = visibleBondSegment(a, b);
   if (!segment) return;
   const intensity = clamp(settings.lightIntensity, 0.25, 1.8);
+  const lightPower = clamp((intensity - 0.25) / 1.55, 0, 1);
   const highlight = interaction.hoveredBondId === bond.id ? 1 : interaction.activeBondIds.has(bond.id) ? 0.58 : 0;
   const offsets = bond.order === 1 ? [0] : bond.order === 2 ? [-4, 4] : [-6, 0, 6];
-  const depthAlpha = clamp(0.5 + ((a.depth + b.depth) / 2 + 2.8) * 0.14, 0.36, 1);
+  const depthAlpha = clamp(0.46 + ((a.depth + b.depth) / 2 + 2.8) * 0.15, 0.32, 1);
   const avgDepth = (a.depth + b.depth) / 2;
-  const lineWidth = clamp((a.screenRadius + b.screenRadius) * 0.075 * (1 + avgDepth * 0.08) * (1 + highlight * 0.2), 2.6, 11.5);
-  const shadeColor = settings.theme === "light" ? "rgba(15,23,42,0.26)" : "rgba(0,0,0,0.48)";
-  const highlightColor = hexToRgba(settings.lightColor, settings.theme === "light" ? 0.42 : 0.3);
+  const lineWidth = clamp((a.screenRadius + b.screenRadius) * 0.075 * (1 + avgDepth * 0.08 + lightPower * 0.08) * (1 + highlight * 0.2), 2.6, 12.4);
+  const shadeColor = settings.theme === "light" ? `rgba(15,23,42,${0.22 + lightPower * 0.18})` : `rgba(0,0,0,${0.44 + lightPower * 0.2})`;
+  const highlightTint = mixHex(settings.lightColor, "#ffffff", 0.18);
+  const highlightColor = hexToRgba(highlightTint, settings.theme === "light" ? 0.45 + lightPower * 0.3 : 0.34 + lightPower * 0.26);
   const light = lightScreen(settings);
   const nearer = a.depth >= b.depth ? a : b;
   const nearT = nearer.id === b.id ? 1 : 0;
@@ -1092,8 +1242,8 @@ function draw3DBond(ctx: CanvasRenderingContext2D, a: ProjectedAtom, b: Projecte
 
   ctx.save();
   ctx.lineCap = "butt";
-  ctx.shadowColor = color;
-  ctx.shadowBlur = settings.visualStyle === "detailed" && budget.detailedEffects ? 3 + intensity * 4 + highlight * 10 : 0;
+  ctx.shadowColor = mixHex(color, settings.lightColor, lightPower * 0.28);
+  ctx.shadowBlur = settings.visualStyle === "detailed" && budget.detailedEffects ? 3 + lightPower * 11 + highlight * 10 : 0;
   for (const offset of offsets) {
     const startX = segment.startX + segment.px * offset;
     const startY = segment.startY + segment.py * offset;
@@ -1124,7 +1274,7 @@ function draw3DBond(ctx: CanvasRenderingContext2D, a: ProjectedAtom, b: Projecte
     ctx.moveTo(startX + tubeShadowX, startY + tubeShadowY);
     ctx.lineTo(endX + tubeShadowX, endY + tubeShadowY);
     ctx.strokeStyle = shadeColor;
-    ctx.globalAlpha = depthAlpha * clamp(0.32 + intensity * 0.18, 0.36, 0.66) * focusAlpha;
+    ctx.globalAlpha = depthAlpha * clamp(0.26 + lightPower * 0.34, 0.28, 0.7) * focusAlpha;
     ctx.lineWidth = lineWidth + 2.4;
     ctx.stroke();
 
@@ -1141,7 +1291,7 @@ function draw3DBond(ctx: CanvasRenderingContext2D, a: ProjectedAtom, b: Projecte
       ctx.moveTo(nearX + tubeLightX, nearY + tubeLightY);
       ctx.lineTo(midX + tubeLightX, midY + tubeLightY);
       ctx.strokeStyle = highlightColor;
-      ctx.globalAlpha = clamp(depthAlpha * (0.42 + intensity * 0.24), 0.3, 0.96) * focusAlpha;
+      ctx.globalAlpha = clamp(depthAlpha * (0.36 + lightPower * 0.5), 0.3, 1) * focusAlpha;
       ctx.lineCap = "round";
       ctx.lineWidth = Math.max(1.1, lineWidth * 0.32);
       ctx.stroke();
@@ -1425,13 +1575,17 @@ function draw3DAtom(ctx: CanvasRenderingContext2D, atom: ProjectedAtom, settings
   const emphasis = (selected ? 1 : 0) + (hovered ? 0.82 + interaction.longHover * 0.55 : 0) + (central ? 0.4 : 0) + (active ? 0.28 : 0);
   const lightX = atom.sx + r * light.x;
   const lightY = atom.sy + r * light.y;
-  const litColor = mixHex(data.color, settings.lightColor, clamp(0.08 + intensity * 0.13, 0.12, 0.32));
-  const midColor = mixHex(data.color, "#ffffff", settings.theme === "light" ? clamp((intensity - 0.5) * 0.04, 0, 0.06) : clamp((intensity - 0.5) * 0.03, 0, 0.05));
-  const rimColor = mixHex(data.color, settings.theme === "light" ? "#0f172a" : "#020617", clamp(0.12 + intensity * 0.13, 0.16, 0.38));
-  const gradient = ctx.createRadialGradient(lightX, lightY, Math.max(3, r * 0.22), atom.sx + r * 0.15, atom.sy + r * 0.18, r * 1.12);
-  gradient.addColorStop(0, mixHex(settings.lightColor, "#ffffff", clamp(0.52 + intensity * 0.22, 0.58, 0.92)));
-  gradient.addColorStop(0.18, litColor);
-  gradient.addColorStop(0.68, midColor);
+  const lightPower = clamp((intensity - 0.25) / 1.55, 0, 1);
+  const lightTint = clamp(0.18 + lightPower * 0.34, 0.18, 0.52);
+  const materialLift = settings.theme === "light" ? clamp(0.06 + (1 - lightPower) * 0.06, 0.06, 0.12) : clamp(0.04 + lightPower * 0.08, 0.04, 0.12);
+  const litColor = mixHex(data.color, settings.lightColor, lightTint);
+  const midColor = mixHex(data.color, settings.theme === "light" ? "#f8fafc" : "#dbeafe", materialLift);
+  const rimColor = mixHex(data.color, settings.theme === "light" ? "#0f172a" : "#020617", clamp(0.2 + lightPower * 0.28, 0.2, 0.48));
+  const gradient = ctx.createRadialGradient(lightX, lightY, Math.max(3, r * 0.18), atom.sx + r * 0.12, atom.sy + r * 0.16, r * 1.14);
+  gradient.addColorStop(0, mixHex(settings.lightColor, "#ffffff", clamp(0.34 + lightPower * 0.42, 0.34, 0.78)));
+  gradient.addColorStop(0.16, litColor);
+  gradient.addColorStop(0.56, midColor);
+  gradient.addColorStop(0.84, mixHex(data.color, rimColor, 0.34));
   gradient.addColorStop(1, rimColor);
 
   ctx.save();
@@ -1449,18 +1603,28 @@ function draw3DAtom(ctx: CanvasRenderingContext2D, atom: ProjectedAtom, settings
   ctx.arc(atom.sx, atom.sy, r, 0, Math.PI * 2);
   ctx.fill();
   if (settings.visualStyle === "detailed" && budget.detailedEffects) {
-    const shade = ctx.createRadialGradient(atom.sx - r * 0.34, atom.sy - r * 0.42, r * 0.08, atom.sx + r * 0.32, atom.sy + r * 0.36, r * 1.16);
+    const shade = ctx.createLinearGradient(atom.sx + light.x * r * 0.9, atom.sy + light.y * r * 0.9, atom.sx - light.x * r * 0.95, atom.sy - light.y * r * 0.95);
     shade.addColorStop(0, "rgba(255,255,255,0)");
-    shade.addColorStop(0.64, `rgba(15,23,42,${clamp(0.015 + intensity * 0.018, 0.02, 0.05)})`);
-    shade.addColorStop(1, settings.theme === "light" ? `rgba(15,23,42,${clamp(0.08 + intensity * 0.07, 0.1, 0.2)})` : `rgba(0,0,0,${clamp(0.18 + intensity * 0.12, 0.22, 0.4)})`);
+    shade.addColorStop(0.48, "rgba(255,255,255,0)");
+    shade.addColorStop(1, settings.theme === "light" ? `rgba(15,23,42,${clamp(0.1 + lightPower * 0.2, 0.1, 0.3)})` : `rgba(0,0,0,${clamp(0.22 + lightPower * 0.28, 0.22, 0.5)})`);
     ctx.fillStyle = shade;
     ctx.beginPath();
     ctx.arc(atom.sx, atom.sy, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = clamp(0.12 + intensity * 0.2, 0.16, 0.48) * depthAlpha;
-    ctx.fillStyle = hexToRgba(settings.lightColor, settings.theme === "light" ? 0.72 : 0.52);
+
+    const rim = ctx.createRadialGradient(atom.sx - light.x * r * 0.55, atom.sy - light.y * r * 0.55, r * 0.3, atom.sx, atom.sy, r * 1.08);
+    rim.addColorStop(0, "rgba(255,255,255,0)");
+    rim.addColorStop(0.72, "rgba(255,255,255,0)");
+    rim.addColorStop(1, hexToRgba(settings.lightColor, settings.theme === "light" ? 0.08 + lightPower * 0.16 : 0.12 + lightPower * 0.22));
+    ctx.fillStyle = rim;
     ctx.beginPath();
-    ctx.arc(lightX, lightY, clamp(r * (0.07 + intensity * 0.018), 2.4, 8), 0, Math.PI * 2);
+    ctx.arc(atom.sx, atom.sy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = clamp(0.18 + lightPower * 0.44, 0.18, 0.62) * depthAlpha;
+    ctx.fillStyle = hexToRgba(mixHex(settings.lightColor, "#ffffff", 0.18), settings.theme === "light" ? 0.82 : 0.64);
+    ctx.beginPath();
+    ctx.arc(lightX, lightY, clamp(r * (0.085 + lightPower * 0.035), 2.8, 9.5), 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = depthAlpha;
   }
@@ -1487,11 +1651,13 @@ function draw3DAtom(ctx: CanvasRenderingContext2D, atom: ProjectedAtom, settings
 
 function drawAtomRadialGlow(ctx: CanvasRenderingContext2D, atom: ProjectedAtom, glow: string, settings: SimulationSettings, alpha: number, emphasis: number, intensity: number) {
   const r = atom.screenRadius;
-  const glowRadius = r * clamp(1.28 + emphasis * 0.18 + intensity * 0.08, 1.34, 1.84);
+  const lightPower = clamp((intensity - 0.25) / 1.55, 0, 1);
+  const glowColor = mixHex(glow, settings.lightColor, clamp(0.12 + lightPower * 0.22, 0.12, 0.34));
+  const glowRadius = r * clamp(1.28 + emphasis * 0.18 + lightPower * 0.2, 1.34, 1.9);
   const gradient = ctx.createRadialGradient(atom.sx, atom.sy, r * 0.68, atom.sx, atom.sy, glowRadius);
-  gradient.addColorStop(0, hexToRgba(glow, 0.11 * alpha));
-  gradient.addColorStop(0.48, hexToRgba(glow, (0.045 + emphasis * 0.055 + intensity * 0.018) * alpha));
-  gradient.addColorStop(1, hexToRgba(glow, 0));
+  gradient.addColorStop(0, hexToRgba(glowColor, (0.09 + lightPower * 0.05) * alpha));
+  gradient.addColorStop(0.48, hexToRgba(glowColor, (0.04 + emphasis * 0.055 + lightPower * 0.052) * alpha));
+  gradient.addColorStop(1, hexToRgba(glowColor, 0));
   ctx.save();
   ctx.globalAlpha = 1;
   ctx.fillStyle = gradient;

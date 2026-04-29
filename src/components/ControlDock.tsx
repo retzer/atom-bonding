@@ -29,8 +29,17 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
           <Slider label="Collision" title="How strongly atoms bounce when they do not bond." value={settings.collisionStrength} min={0.2} max={1.4} step={0.05} onChange={(value) => onSetting("collisionStrength", value)} />
           <Slider label="EN difference" title="Emphasizes electronegativity difference when classifying bonds." value={settings.electronegativityEmphasis} min={0.7} max={1.5} step={0.05} onChange={(value) => onSetting("electronegativityEmphasis", value)} />
           <Slider label="Bond distance" title="How close atoms must be before bond rules are tested." value={settings.bondingDistance} min={1.45} max={2.8} step={0.05} onChange={(value) => onSetting("bondingDistance", value)} />
-          <Slider label="Relaxation" title="How strongly VSEPR angles, bond lengths, and atom spacing settle the molecule." value={settings.relaxationStrength} min={0} max={1.2} step={0.05} onChange={(value) => onSetting("relaxationStrength", value)} />
           <Slider label="Zoom" title="Scale the simulation viewport without changing the chemistry." value={settings.zoom} min={0.55} max={2.2} step={0.05} onChange={(value) => onSetting("zoom", value)} />
+        </div>
+        <div className="projection-row" aria-label="Geometry behavior">
+          <button className={settings.geometryMode === "rigid" ? "visual-choice active" : "visual-choice"} title="Strict textbook VSEPR geometry with minimal exploratory motion" onClick={() => onSetting("geometryMode", "rigid")}>
+            <Orbit size={15} />
+            Rigid
+          </button>
+          <button className={settings.geometryMode === "flexible" ? "visual-choice active" : "visual-choice"} title="Flexible exploration mode with gentle motion and spacing response" onClick={() => onSetting("geometryMode", "flexible")}>
+            <Waves size={15} />
+            Flexible
+          </button>
         </div>
       </div>
       <div className="control-section">

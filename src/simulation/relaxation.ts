@@ -6,13 +6,14 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 export function applyMolecularRelaxation(atoms: AtomParticle[], bonds: Bond[], settings: SimulationSettings, dt: number) {
   if (!settings.geometryAssist || atoms.length < 2) return;
-  const strength = settings.relaxationStrength;
+  const rigid = settings.geometryMode === "rigid";
+  const strength = rigid ? settings.geometry3D ? 1.35 : 1.75 : settings.relaxationStrength;
   if (strength <= 0) return;
 
   applyBondSprings(atoms, bonds, strength, dt);
   if (settings.geometry3D) applyTargetDepthSprings(atoms, strength, dt);
   applyVseprAngleForces(atoms, bonds, strength, dt);
-  applyNonbondedRepulsion(atoms, bonds, settings, strength, dt);
+  if (!rigid) applyNonbondedRepulsion(atoms, bonds, settings, strength, dt);
 }
 
 function applyBondSprings(atoms: AtomParticle[], bonds: Bond[], strength: number, dt: number) {

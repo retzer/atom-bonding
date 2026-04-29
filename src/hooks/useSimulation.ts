@@ -36,6 +36,7 @@ export const defaultSettings: SimulationSettings = {
   highlightLonePairs: true,
   geometryAssist: true,
   geometry3D: false,
+  geometryMode: "flexible",
   relaxationStrength: 0.74,
   advanced: false,
   selectedElements: ["C"]
@@ -159,8 +160,14 @@ export function useSimulation() {
   }, [isRunning, settings, size.height, size.width]);
 
   const updateSetting = <K extends keyof SimulationSettings>(key: K, value: SimulationSettings[K]) => {
-    setSettings((current) => ({ ...current, [key]: value }));
-    if (key === "geometry3D" && value === true) setIsRunning(true);
+    setSettings((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "geometryMode") {
+        next.relaxationStrength = value === "rigid" ? 1.2 : 0.72;
+        next.geometryAssist = true;
+      }
+      return next;
+    });
   };
 
   const setCanvasSize = useCallback((width: number, height: number) => {
@@ -302,6 +309,7 @@ export function useSimulation() {
         highlightLonePairs: settings.highlightLonePairs,
         geometryAssist: settings.geometryAssist,
         geometry3D: settings.geometry3D,
+        geometryMode: settings.geometryMode,
         relaxationStrength: settings.relaxationStrength,
         selectedElements: settings.selectedElements,
         zoom: settings.zoom

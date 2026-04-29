@@ -34,6 +34,7 @@ export function App() {
             <Molecule3DView
               state={sim.state}
               settings={sim.settings}
+              running={sim.isRunning}
               width={sim.size.width}
               height={sim.size.height}
               onResize={sim.setCanvasSize}

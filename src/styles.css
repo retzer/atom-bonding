@@ -364,6 +364,77 @@ button:disabled {
   color: #20302a;
 }
 
+.camera-guide {
+  position: absolute;
+  top: 72px;
+  right: 14px;
+  display: grid;
+  gap: 7px;
+  width: min(176px, calc(100% - 28px));
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #d7e2de;
+  background: rgba(10, 12, 12, 0.58);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.camera-guide strong {
+  color: #f4f7f5;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.camera-guide span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #aebbb6;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.camera-guide kbd {
+  display: inline-flex;
+  min-height: 21px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #e9fffa;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.26);
+  font: 800 0.68rem Inter, system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.app-shell.light .camera-guide {
+  border-color: rgba(24, 34, 30, 0.12);
+  color: #20302a;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 16px 36px rgba(31, 41, 55, 0.1);
+}
+
+.app-shell.light .camera-guide strong {
+  color: #18221e;
+}
+
+.app-shell.light .camera-guide span {
+  color: #61706a;
+}
+
+.app-shell.light .camera-guide kbd {
+  border-color: rgba(24, 34, 30, 0.13);
+  color: #20302a;
+  background: rgba(24, 34, 30, 0.055);
+  box-shadow: inset 0 -1px 0 rgba(24, 34, 30, 0.13);
+}
+
 .control-dock,
 .learning-panel,
 .info-card {
@@ -1265,6 +1336,23 @@ button:disabled {
   .zoom-controls button {
     width: 32px;
     height: 32px;
+  }
+
+  .camera-guide {
+    top: 62px;
+    right: 10px;
+    width: min(164px, calc(100% - 20px));
+    padding: 9px;
+  }
+
+  .camera-guide span {
+    font-size: 0.7rem;
+  }
+
+  .camera-guide kbd {
+    min-height: 20px;
+    padding: 0 6px;
+    font-size: 0.64rem;
   }
 
   .builder-results,

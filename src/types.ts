@@ -13,6 +13,7 @@ export type ProjectionMode = "orthographic" | "soft-perspective" | "deep-perspec
 export type CameraPreset = "free" | "top" | "side" | "isometric";
 export type StructureDisplayMode = "full" | "simplified" | "skeleton";
 export type AnalysisMode = "structure" | "chemistry";
+export type GeometryMode = "rigid" | "flexible";
 
 export type AtomSymbol =
   | "H"
@@ -208,6 +209,7 @@ export type SimulationSettings = {
   highlightLonePairs: boolean;
   geometryAssist: boolean;
   geometry3D: boolean;
+  geometryMode: GeometryMode;
   relaxationStrength: number;
   advanced: boolean;
   selectedElements: AtomSymbol[];

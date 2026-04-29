@@ -169,7 +169,7 @@ export function InfoPanel({ atom, bond, atoms, bonds, hydrogenBonds, molecule, e
 
       <section className="info-card compact">
         <h2>Geometry Forces</h2>
-        <p>{settings.geometryAssist ? `VSEPR angle targets, bond-length springs, damping, and nonbonded repulsion are gently relaxing the structure${settings.geometry3D ? ". The main view is using a separate orbitable 3D renderer, independent of the 2D collision canvas." : "."}` : "Geometry assist is off. Atoms still bond and collide, but VSEPR angle relaxation is paused."}</p>
+        <p>{settings.geometryAssist ? settings.geometryMode === "rigid" ? `Rigid mode keeps the structure close to textbook VSEPR geometry with minimal thermal drift${settings.geometry3D ? ". The 3D view prioritizes ideal bond angles and central-atom geometry." : "."}` : `Flexible mode keeps VSEPR guidance active while allowing exploratory motion, spacing, and gentle distortion${settings.geometry3D ? ". The 3D view blends textbook geometry with the live simulation." : "."}` : "Geometry assist is off. Atoms still bond and collide, but VSEPR angle guidance is paused."}</p>
       </section>
     </aside>
   );

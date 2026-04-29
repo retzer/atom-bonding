@@ -4,6 +4,64 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Atom Bonding Studio</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cellipse cx='32' cy='32' rx='23' ry='8' fill='none' stroke='%235eead4' stroke-width='3'/%3E%3Cellipse cx='32' cy='32' rx='23' ry='8' fill='none' stroke='%2381a7ff' stroke-width='3' transform='rotate(60 32 32)'/%3E%3Cellipse cx='32' cy='32' rx='23' ry='8' fill='none' stroke='%23f472b6' stroke-width='3' transform='rotate(120 32 32)'/%3E%3Ccircle cx='32' cy='32' r='7' fill='%23f8fafc'/%3E%3Ccircle cx='52' cy='32' r='4' fill='%235eead4'/%3E%3C/svg%3E" />
+    <style data-boot-loader>
+      @keyframes bootOrbit { to { transform: rotate(calc(var(--tilt) + 360deg)) scaleY(0.44); } }
+      @keyframes bootPulse { 0%, 100% { transform: scale(1); opacity: 0.72; } 50% { transform: scale(1.08); opacity: 1; } }
+      .boot-loader {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(circle at 50% 42%, #14313b 0, #0b1220 42%, #070b14 100%);
+        color: #e2e8f0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .boot-card {
+        display: grid;
+        gap: 18px;
+        justify-items: center;
+        text-align: center;
+      }
+      .boot-atom {
+        position: relative;
+        width: 112px;
+        height: 112px;
+        display: grid;
+        place-items: center;
+        filter: drop-shadow(0 18px 36px rgba(45, 212, 191, 0.28));
+      }
+      .boot-nucleus {
+        width: 32px;
+        height: 32px;
+        border-radius: 999px;
+        background: radial-gradient(circle at 30% 24%, #ffffff, #5eead4 42%, #0f766e 100%);
+        animation: bootPulse 1.45s ease-in-out infinite;
+      }
+      .boot-orbit {
+        --tilt: 0deg;
+        position: absolute;
+        inset: 10px;
+        border: 2px solid rgba(125, 211, 252, 0.54);
+        border-radius: 999px;
+        transform: rotate(var(--tilt)) scaleY(0.44);
+        animation: bootOrbit 1.6s linear infinite;
+      }
+      .boot-orbit:nth-child(2) { --tilt: 60deg; animation-duration: 2s; border-color: rgba(94, 234, 212, 0.56); }
+      .boot-orbit:nth-child(3) { --tilt: 120deg; animation-duration: 2.45s; border-color: rgba(244, 114, 182, 0.5); }
+      .boot-electron {
+        position: absolute;
+        top: -5px;
+        left: 50%;
+        width: 10px;
+        height: 10px;
+        margin-left: -5px;
+        border-radius: 999px;
+        background: #f8fafc;
+        box-shadow: 0 0 16px rgba(255,255,255,0.85);
+      }
+      .boot-title { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: 0; }
+      .boot-subtitle { margin: 0; color: #9fb4c2; font-size: 13px; font-weight: 650; }
+    </style>
     <script data-file-redirect>
       if (location.protocol === "file:" && !location.pathname.replaceAll("\\", "/").includes("/dist/")) {
         location.replace("./dist/index.html");
@@ -22,8 +80,19 @@
   </head>
   <body>
     <div id="root">
-      <div style="min-height:100vh;display:grid;place-items:center;background:#0b1020;color:#e2e8f0;font-family:system-ui,sans-serif;">
-        Opening Atom Bonding Studio...
+      <div class="boot-loader" role="status" aria-live="polite" aria-label="Loading Atom Bonding Studio">
+        <div class="boot-card">
+          <div class="boot-atom" aria-hidden="true">
+            <span class="boot-orbit"><span class="boot-electron"></span></span>
+            <span class="boot-orbit"><span class="boot-electron"></span></span>
+            <span class="boot-orbit"><span class="boot-electron"></span></span>
+            <span class="boot-nucleus"></span>
+          </div>
+          <div>
+            <p class="boot-title">Atom Bonding Studio</p>
+            <p class="boot-subtitle">Loading molecule space...</p>
+          </div>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
