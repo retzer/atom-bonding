@@ -823,8 +823,10 @@ function drawWebGLBonds(renderer: WebGLRendererState, atoms: ProjectedAtom[], bo
     const dir = normalizeVec({ x: endCenter.x - startCenter.x, y: endCenter.y - startCenter.y, z: endCenter.z - startCenter.z });
     const distance = Math.hypot(endCenter.x - startCenter.x, endCenter.y - startCenter.y, endCenter.z - startCenter.z);
     if (distance <= 0.01) continue;
-    const radiusA = worldRadii.get(a.id) ?? 0.2;
-    const radiusB = worldRadii.get(b.id) ?? 0.2;
+    const start = startCenter;
+    const end = endCenter;
+    const visibleLength = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z);
+    if (visibleLength <= 0.02) continue;
     const offsetDir = stablePerpendicular(dir, view);
     const lanes = bond.order === 1 ? [0] : bond.order === 2 ? [-1, 1] : [-1.45, 0, 1.45];
     const baseTube = clamp(0.045 - (bond.order - 1) * 0.005, 0.032, 0.052);
@@ -833,21 +835,9 @@ function drawWebGLBonds(renderer: WebGLRendererState, atoms: ProjectedAtom[], bo
     const depthOffset = -0.004;
     for (const lane of lanes) {
       const offset = lane * baseTube * 2.75;
+      const laneStart = { x: start.x + offsetDir.x * offset, y: start.y + offsetDir.y * offset, z: start.z + offsetDir.z * offset };
+      const laneEnd = { x: end.x + offsetDir.x * offset, y: end.y + offsetDir.y * offset, z: end.z + offsetDir.z * offset };
       const tubeRadius = baseTube * (active ? 1.32 : 1);
-      const startInset = bondLaneSurfaceInset(radiusA, offset, tubeRadius);
-      const endInset = bondLaneSurfaceInset(radiusB, offset, tubeRadius);
-      const usableLength = distance - startInset - endInset;
-      if (usableLength <= tubeRadius * 1.6) continue;
-      const laneStart = {
-        x: startCenter.x + offsetDir.x * offset + dir.x * startInset,
-        y: startCenter.y + offsetDir.y * offset + dir.y * startInset,
-        z: startCenter.z + offsetDir.z * offset + dir.z * startInset
-      };
-      const laneEnd = {
-        x: endCenter.x + offsetDir.x * offset - dir.x * endInset,
-        y: endCenter.y + offsetDir.y * offset - dir.y * endInset,
-        z: endCenter.z + offsetDir.z * offset - dir.z * endInset
-      };
       const colorA = rgbUnit(bondAtomTubeColor(a, settings));
       const colorB = rgbUnit(bondAtomTubeColor(b, settings));
       const baseColor = {
@@ -862,13 +852,6 @@ function drawWebGLBonds(renderer: WebGLRendererState, atoms: ProjectedAtom[], bo
       drawWebGLMesh(renderer, renderer.cylinder, cylinderMatrix(laneStart, laneEnd, tubeRadius), tubeColor, alpha, depthOffset);
     }
   }
-}
-
-function bondLaneSurfaceInset(atomRadius: number, laneOffset: number, tubeRadius: number) {
-  const laneDistance = Math.abs(laneOffset);
-  const effectiveRadius = Math.max(tubeRadius * 1.8, atomRadius - tubeRadius * 0.28);
-  const surface = Math.sqrt(Math.max(tubeRadius * tubeRadius, effectiveRadius * effectiveRadius - laneDistance * laneDistance));
-  return Math.max(0, surface - tubeRadius * 0.72);
 }
 
 function drawWebGLGroundShadow(renderer: WebGLRendererState, atoms: ProjectedAtom[], bonds: Bond[], worldRadii: Map<string, number>, settings: SimulationSettings, lighting: SceneLighting, budget: RenderBudget) {
