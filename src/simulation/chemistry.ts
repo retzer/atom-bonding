@@ -2,6 +2,9 @@ import { atomData } from "../data/atoms";
 import type { AtomParticle, AtomSymbol, Bond, BondEvent, BondKind, SimulationSettings } from "../types";
 
 const covalentPairs: Record<string, 1 | 2 | 3> = {
+  "B-C": 1,
+  "B-F": 1,
+  "B-H": 1,
   "H-H": 1,
   "Br-Br": 1,
   "C-H": 1,
@@ -19,15 +22,36 @@ const covalentPairs: Record<string, 1 | 2 | 3> = {
   "C-N": 1,
   "N-N": 3,
   "O-O": 2,
+  "O-S": 2,
+  "N-O": 2,
+  "C-P": 1,
+  "C-Se": 1,
   "C-S": 1,
+  "Cl-P": 1,
+  "H-P": 1,
+  "H-Se": 1,
   "H-S": 1,
+  "O-P": 1,
+  "P-P": 1,
+  "P-S": 1,
+  "Se-Se": 1,
   "C-F": 1,
   "C-Cl": 1,
   "C-Br": 1,
   "C-I": 1,
+  "Al-Cl": 1,
+  "Al-F": 1,
   "O-Si": 1,
   "Si-Si": 1,
-  "H-Si": 1
+  "H-Si": 1,
+  "Ge-H": 1,
+  "Ge-O": 1,
+  "Ge-Ge": 1,
+  "As-H": 1,
+  "As-Cl": 1,
+  "Sb-Cl": 1,
+  "H-Te": 1,
+  "O-Te": 2
 };
 
 const pairKey = (a: AtomSymbol, b: AtomSymbol) => [a, b].sort().join("-") as keyof typeof covalentPairs;
@@ -100,9 +124,9 @@ export function applyIonCharges(a: AtomParticle, b: AtomParticle) {
   const atomA = atomData[a.symbol];
   const atomB = atomData[b.symbol];
   const chargeFor = (atom: typeof atomA) => {
-    if (atom.symbol === "Mg" || atom.symbol === "Ca") return 2;
-    if (atom.symbol === "Fe") return 2;
-    if (atom.symbol === "O" || atom.symbol === "S") return 2;
+    if (["Be", "Mg", "Ca", "Sr", "Ba", "Zn", "Hg", "Fe"].includes(atom.symbol)) return 2;
+    if (["Al", "Ga", "N", "P", "As", "Sb", "Bi"].includes(atom.symbol)) return 3;
+    if (["O", "S", "Se", "Te"].includes(atom.symbol)) return 2;
     return 1;
   };
   if (atomA.electronegativity > atomB.electronegativity) {

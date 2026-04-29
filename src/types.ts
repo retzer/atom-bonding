@@ -10,9 +10,15 @@ export type AppMode = "free" | "guided" | "presets";
 export type ThemeMode = "dark" | "light";
 export type VisualStyle = "detailed" | "simple-neutral" | "simple-colored";
 export type ProjectionMode = "orthographic" | "soft-perspective" | "deep-perspective";
+export type CameraPreset = "free" | "top" | "side" | "isometric";
+export type StructureDisplayMode = "full" | "simplified" | "skeleton";
 
 export type AtomSymbol =
   | "H"
+  | "He"
+  | "Li"
+  | "Be"
+  | "B"
   | "C"
   | "N"
   | "O"
@@ -20,16 +26,37 @@ export type AtomSymbol =
   | "Ne"
   | "Na"
   | "Mg"
+  | "Al"
   | "Si"
+  | "P"
   | "S"
   | "Cl"
   | "Ar"
   | "K"
   | "Ca"
+  | "Zn"
+  | "Ga"
+  | "Ge"
+  | "As"
+  | "Se"
   | "Fe"
   | "Cu"
+  | "Ag"
   | "Br"
-  | "I";
+  | "Kr"
+  | "Rb"
+  | "Sr"
+  | "Sn"
+  | "Sb"
+  | "Te"
+  | "I"
+  | "Xe"
+  | "Cs"
+  | "Ba"
+  | "Au"
+  | "Hg"
+  | "Pb"
+  | "Bi";
 
 export type ElementGroup =
   | "core-nonmetals"
@@ -147,8 +174,22 @@ export type SimulationSettings = {
   theme: ThemeMode;
   visualStyle: VisualStyle;
   projectionMode: ProjectionMode;
+  cameraPreset: CameraPreset;
+  lightYaw: number;
+  lightPitch: number;
+  lightIntensity: number;
+  lightColor: string;
   showShells: boolean;
   showLabels: boolean;
+  displayMode: StructureDisplayMode;
+  showElectronRegions: boolean;
+  showBondDipoles: boolean;
+  showNetDipole: boolean;
+  showCharges: boolean;
+  showFunctionalGroups: boolean;
+  focusMode: boolean;
+  showElectronFlow: boolean;
+  highlightLonePairs: boolean;
   geometryAssist: boolean;
   geometry3D: boolean;
   relaxationStrength: number;

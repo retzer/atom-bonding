@@ -1,4 +1,4 @@
-import { Box, Eye, EyeOff, Gauge, Orbit, Palette, Plus, Share2, SlidersHorizontal, Sparkles, ZoomIn } from "lucide-react";
+import { Box, Eye, EyeOff, Focus, Gauge, Lightbulb, MousePointer2, Orbit, Palette, Plus, Share2, SlidersHorizontal, Sparkles, Tags, Waves, Zap, ZoomIn } from "lucide-react";
 import type { CSSProperties } from "react";
 import { atomData, elementGroups } from "../data/atoms";
 import type { AtomSymbol, SimulationSettings } from "../types";
@@ -11,12 +11,8 @@ type Props = {
 };
 
 export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }: Props) {
-  const toggleElement = (symbol: AtomSymbol) => {
-    const exists = settings.selectedElements.includes(symbol);
-    const next = exists
-      ? settings.selectedElements.filter((item) => item !== symbol)
-      : [...settings.selectedElements, symbol];
-    onSetting("selectedElements", next.length ? next : [symbol]);
+  const selectElement = (symbol: AtomSymbol) => {
+    onSetting("selectedElements", [symbol]);
   };
 
   return (
@@ -34,7 +30,7 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
         <Slider label="Relaxation" title="How strongly VSEPR angles, bond lengths, and atom spacing settle the molecule." value={settings.relaxationStrength} min={0} max={1.2} step={0.05} onChange={(value) => onSetting("relaxationStrength", value)} />
         <Slider label="Zoom" title="Scale the simulation viewport without changing the chemistry." value={settings.zoom} min={0.55} max={2.2} step={0.05} onChange={(value) => onSetting("zoom", value)} />
       </div>
-      <div className="element-board" aria-label="Choose atom types by group">
+      <div className="element-board" aria-label="Choose an atom type by group">
         {elementGroups.map((group) => (
           <div className="element-group" key={group.id}>
             <div className="element-group-title">{group.label}</div>
@@ -47,7 +43,7 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
                     className={settings.selectedElements.includes(atom.symbol) ? "selected" : ""}
                     style={{ "--atom-color": atom.color } as CSSProperties}
                     title={`${atom.name}: ${atom.behavior}`}
-                    onClick={() => toggleElement(atom.symbol)}
+                    onClick={() => selectElement(atom.symbol)}
                   >
                     {atom.symbol}
                   </button>
@@ -80,18 +76,47 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
           Color
         </button>
       </div>
+      <div className="projection-row" aria-label="Structure detail">
+        {(["full", "simplified", "skeleton"] as const).map((mode) => (
+          <button key={mode} className={settings.displayMode === mode ? "visual-choice active" : "visual-choice"} title={`Use ${mode} structure display`} onClick={() => onSetting("displayMode", mode)}>
+            {mode[0].toUpperCase() + mode.slice(1)}
+          </button>
+        ))}
+      </div>
       {settings.geometry3D && (
-        <div className="projection-row" aria-label="3D projection">
-          <button className={settings.projectionMode === "orthographic" ? "visual-choice active" : "visual-choice"} title="Flatten depth for a clean structural comparison" onClick={() => onSetting("projectionMode", "orthographic")}>
-            Ortho
-          </button>
-          <button className={settings.projectionMode === "soft-perspective" ? "visual-choice active" : "visual-choice"} title="Use gentle perspective depth for stable 3D viewing" onClick={() => onSetting("projectionMode", "soft-perspective")}>
-            Soft
-          </button>
-          <button className={settings.projectionMode === "deep-perspective" ? "visual-choice active" : "visual-choice"} title="Use stronger perspective for clearer front-to-back depth" onClick={() => onSetting("projectionMode", "deep-perspective")}>
-            Deep
-          </button>
-        </div>
+        <>
+          <div className="projection-row" aria-label="3D projection">
+            <button className={settings.projectionMode === "orthographic" ? "visual-choice active" : "visual-choice"} title="Flatten depth for a clean structural comparison" onClick={() => onSetting("projectionMode", "orthographic")}>
+              Ortho
+            </button>
+            <button className={settings.projectionMode === "soft-perspective" ? "visual-choice active" : "visual-choice"} title="Use gentle perspective depth for stable 3D viewing" onClick={() => onSetting("projectionMode", "soft-perspective")}>
+              Soft
+            </button>
+            <button className={settings.projectionMode === "deep-perspective" ? "visual-choice active" : "visual-choice"} title="Use stronger perspective for clearer front-to-back depth" onClick={() => onSetting("projectionMode", "deep-perspective")}>
+              Deep
+            </button>
+          </div>
+          <div className="projection-row" aria-label="3D camera presets">
+            {(["free", "isometric", "top", "side"] as const).map((preset) => (
+              <button key={preset} className={settings.cameraPreset === preset ? "visual-choice active" : "visual-choice"} title={`Use ${preset} camera view`} onClick={() => onSetting("cameraPreset", preset)}>
+                <MousePointer2 size={15} />
+                {preset[0].toUpperCase() + preset.slice(1)}
+              </button>
+            ))}
+          </div>
+          <div className="control-grid lighting-grid" aria-label="Lighting controls">
+            <Slider label="Light yaw" title="Move the light around the molecule horizontally." value={settings.lightYaw} min={-80} max={80} step={1} onChange={(value) => onSetting("lightYaw", value)} />
+            <Slider label="Light pitch" title="Raise or lower the light above the molecule." value={settings.lightPitch} min={20} max={78} step={1} onChange={(value) => onSetting("lightPitch", value)} />
+            <Slider label="Light power" title="Change the strength of directional lighting." value={settings.lightIntensity} min={0.25} max={1.8} step={0.05} onChange={(value) => onSetting("lightIntensity", value)} />
+            <label className="slider color-slider" title="Change the color of the directional light.">
+              <span>
+                Light color
+                <strong>{settings.lightColor}</strong>
+              </span>
+              <input type="color" value={settings.lightColor} onChange={(event) => onSetting("lightColor", event.target.value)} />
+            </label>
+          </div>
+        </>
       )}
       <div className="toggle-row">
         <button className={settings.showShells ? "toggle active" : "toggle"} title="Show or hide electron shells" onClick={() => onSetting("showShells", !settings.showShells)}>
@@ -105,6 +130,38 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
         <button className={settings.advanced ? "toggle active" : "toggle"} title="Switch between plain and deeper explanation text" onClick={() => onSetting("advanced", !settings.advanced)}>
           <Gauge size={16} />
           Advanced
+        </button>
+        <button className={settings.showElectronRegions ? "toggle active" : "toggle"} title="Show VSEPR electron regions around bonded atoms" onClick={() => onSetting("showElectronRegions", !settings.showElectronRegions)}>
+          <Waves size={16} />
+          Regions
+        </button>
+        <button className={settings.highlightLonePairs ? "toggle active" : "toggle"} title="Highlight lone electron pairs and their repulsion regions" onClick={() => onSetting("highlightLonePairs", !settings.highlightLonePairs)}>
+          <Lightbulb size={16} />
+          Lone pairs
+        </button>
+        <button className={settings.showBondDipoles ? "toggle active" : "toggle"} title="Show bond dipole arrows" onClick={() => onSetting("showBondDipoles", !settings.showBondDipoles)}>
+          <Zap size={16} />
+          Bond dipoles
+        </button>
+        <button className={settings.showNetDipole ? "toggle active" : "toggle"} title="Show the overall molecular dipole" onClick={() => onSetting("showNetDipole", !settings.showNetDipole)}>
+          <Zap size={16} />
+          Net dipole
+        </button>
+        <button className={settings.showCharges ? "toggle active" : "toggle"} title="Show partial and formal charge labels" onClick={() => onSetting("showCharges", !settings.showCharges)}>
+          <Tags size={16} />
+          Charges
+        </button>
+        <button className={settings.showFunctionalGroups ? "toggle active" : "toggle"} title="Highlight OH, amine, carbonyl, and aromatic-like regions" onClick={() => onSetting("showFunctionalGroups", !settings.showFunctionalGroups)}>
+          <Tags size={16} />
+          Groups
+        </button>
+        <button className={settings.focusMode ? "toggle active" : "toggle"} title="Fade distant atoms and emphasize the selected atom neighborhood" onClick={() => onSetting("focusMode", !settings.focusMode)}>
+          <Focus size={16} />
+          Focus
+        </button>
+        <button className={settings.showElectronFlow ? "toggle active" : "toggle"} title="Animate electron density moving along bonds" onClick={() => onSetting("showElectronFlow", !settings.showElectronFlow)}>
+          <Sparkles size={16} />
+          Flow
         </button>
         <button className={settings.geometryAssist ? "toggle active" : "toggle"} title="Use VSEPR angle targets and relaxation forces to settle molecule shapes" onClick={() => onSetting("geometryAssist", !settings.geometryAssist)}>
           <Orbit size={16} />

@@ -66,7 +66,7 @@ export function applyVsepr3DTargets(atoms: AtomParticle[], bonds: Bond[]) {
     const centerZ = center.z ?? 0;
 
     orderedNeighbors.forEach((neighbor, index) => {
-      const vector = orderedVectors[index];
+      const vector = repelledByLonePairs(orderedVectors[index], analysis.axe, analysis.lonePairs);
       const bond = graph.bondsByAtomId.get(center.id)?.find((item) => item.a === neighbor.id || item.b === neighbor.id);
       const length = bond?.length ?? Math.hypot(neighbor.x - center.x, neighbor.y - center.y);
       const next = {
@@ -96,4 +96,33 @@ export function applyVsepr3DTargets(atoms: AtomParticle[], bonds: Bond[]) {
       atom.targetZ = 0;
     }
   }
+}
+
+function repelledByLonePairs(vector: Vec3, axe: string, lonePairs: number): Vec3 {
+  if (lonePairs <= 0) return vector;
+  const loneVectors = lonePairVectorsFor(axe, lonePairs);
+  if (!loneVectors.length) return vector;
+  const repelled = loneVectors.reduce(
+    (current, lone) => ({
+      x: current.x - lone.x * 0.16,
+      y: current.y - lone.y * 0.16,
+      z: current.z - lone.z * 0.16
+    }),
+    { ...vector }
+  );
+  return normalizeVec(repelled);
+}
+
+function lonePairVectorsFor(axe: string, lonePairs: number): Vec3[] {
+  const map: Record<string, Vec3[]> = {
+    AX3E: [{ x: 0, y: 0, z: 1 }],
+    AX2E2: [{ x: 0.64, y: -0.5, z: 0.58 }, { x: -0.64, y: -0.5, z: 0.58 }],
+    AX2E: [{ x: 0, y: -1, z: 0 }]
+  };
+  return (map[axe] ?? []).slice(0, lonePairs).map(normalizeVec);
+}
+
+function normalizeVec(vector: Vec3): Vec3 {
+  const length = Math.max(0.001, Math.hypot(vector.x, vector.y, vector.z));
+  return { x: vector.x / length, y: vector.y / length, z: vector.z / length };
 }

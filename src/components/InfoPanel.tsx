@@ -25,6 +25,7 @@ export function InfoPanel({ atom, bond, atoms, bonds, hydrogenBonds, molecule, e
   const why = bond ? bondReason(bond, atoms) : latest?.science;
   const inventory = sceneInventory(atoms, bonds);
   const geometry = atom ? analyzeAtomGeometry(atom, atoms, bonds) : null;
+  const resonance = resonanceHint(molecule.length ? molecule : atoms, bonds);
   const moleculeFormula = molecule.length
     ? formulaFromAtoms(molecule)
     : activePreset?.formula ?? "No molecule selected";
@@ -63,6 +64,12 @@ export function InfoPanel({ atom, bond, atoms, bonds, hydrogenBonds, molecule, e
               </div>
             )}
             <p className="plain-text">{selectedAtom.behavior}</p>
+            {geometry && geometry.lonePairs > 0 && (
+              <div className="explanation mini-lesson">
+                <strong>Lone electron pair</strong>
+                <p>{selectedAtom.symbol} has {geometry.lonePairs} lone pair{geometry.lonePairs === 1 ? "" : "s"} in this VSEPR model. Lone pairs occupy electron regions without making bonds, and they repel bonding regions strongly enough to bend or compress the molecular shape.</p>
+              </div>
+            )}
           </>
         ) : (
           <div className="empty-state">
@@ -97,6 +104,12 @@ export function InfoPanel({ atom, bond, atoms, bonds, hydrogenBonds, molecule, e
           <p>{settings.advanced ? latest?.science ?? activePreset?.science ?? "Bond classification uses valence capacity, distance, and electronegativity difference. Small differences create nonpolar covalent bonds, moderate differences create polar covalent bonds, and large metal-nonmetal differences create ionic bonds." : "Turn on Advanced to see the deeper chemistry model used for the current interaction."}</p>
           <strong>Why did this bond form?</strong>
           <p>{why ?? "Select a bond to see the exact rule check: distance, valence capacity, electronegativity difference, and bond classification."}</p>
+          {resonance && (
+            <>
+              <strong>Resonance</strong>
+              <p>{resonance}</p>
+            </>
+          )}
         </div>
       </section>
 
@@ -294,4 +307,23 @@ function bondReason(bond: Bond, atoms: AtomParticle[]) {
   const distanceCheck = distance <= bond.length * 1.35 ? "close enough" : "held by an existing bond constraint";
   const valenceCheck = bond.kind === "ionic" ? "electron transfer is favored" : `${bond.order} shared electron pair${bond.order > 1 ? "s" : ""} fit the open valence slots`;
   return `${atomA.symbol}-${atomB.symbol}: atoms were ${distanceCheck}; EN difference ${diff.toFixed(2)} classified it as ${bondKindLabel[bond.kind].toLowerCase()}; ${valenceCheck}.`;
+}
+
+function resonanceHint(atoms: AtomParticle[], bonds: Bond[]) {
+  if (atoms.length < 3) return null;
+  const ids = new Set(atoms.map((atom) => atom.id));
+  const localBonds = bonds.filter((bond) => ids.has(bond.a) && ids.has(bond.b) && bond.kind !== "hydrogen" && bond.kind !== "dispersion" && bond.kind !== "metallic");
+  const doubleBonds = localBonds.filter((bond) => bond.order === 2);
+  if (!doubleBonds.length) return null;
+  const atomById = new Map(atoms.map((atom) => [atom.id, atom]));
+  const conjugated = doubleBonds.some((bond) => {
+    const neighbors = localBonds.filter((item) => item.id !== bond.id && (item.a === bond.a || item.b === bond.a || item.a === bond.b || item.b === bond.b));
+    return neighbors.some((item) => {
+      const otherId = [item.a, item.b].find((id) => id !== bond.a && id !== bond.b);
+      const atom = otherId ? atomById.get(otherId) : null;
+      return atom && ["C", "N", "O", "S", "P"].includes(atom.symbol);
+    });
+  });
+  if (!conjugated) return null;
+  return "This structure has adjacent pi-bond or lone-pair regions, so real electron density may be delocalized across more than one drawing. This simulator keeps one visible bond layout, but highlights the idea as resonance-capable.";
 }

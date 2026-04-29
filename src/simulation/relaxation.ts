@@ -57,6 +57,7 @@ function applyVseprAngleForces(atoms: AtomParticle[], bonds: Bond[], strength: n
     if (!analysis || neighbors.length < 2 || analysis.relaxAngle <= 0) continue;
     const target = analysis.relaxAngle * Math.PI / 180;
     const perPair = neighbors.length > 3 ? 0.55 : 1;
+    const lonePairForceBoost = 1 + analysis.lonePairs * 0.22;
 
     for (let i = 0; i < neighbors.length; i += 1) {
       for (let j = i + 1; j < neighbors.length; j += 1) {
@@ -76,7 +77,7 @@ function applyVseprAngleForces(atoms: AtomParticle[], bonds: Bond[], strength: n
         const angle = Math.acos(dot);
         const cross = ux * vy - uy * vx || 1;
         const delta = clamp(target - angle, -0.9, 0.9);
-        const force = delta * strength * dt * 74 * perPair;
+        const force = delta * strength * dt * 74 * perPair * lonePairForceBoost;
         const aTangent = cross > 0 ? { x: uy, y: -ux } : { x: -uy, y: ux };
         const bTangent = cross > 0 ? { x: -vy, y: vx } : { x: vy, y: -vx };
 

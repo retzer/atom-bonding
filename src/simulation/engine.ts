@@ -10,6 +10,7 @@ const idPart = () => `${Date.now().toString(36)}-${Math.random().toString(36).sl
 
 export function createAtom(symbol: AtomSymbol, x: number, y: number, guided = false): AtomParticle {
   const atom = atomData[symbol];
+  if (!atom) throw new Error(`Unsupported atom symbol: ${symbol}`);
   return {
     id: `${symbol}-${idPart()}`,
     symbol,
@@ -43,8 +44,10 @@ export function createFreeState(width: number, height: number, settings: Simulat
 }
 
 export function createSpawnedAtoms(width: number, height: number, settings: SimulationSettings, count = settings.atomCount): AtomParticle[] {
+  const selected = settings.selectedElements.filter((symbol) => atomData[symbol]);
+  const elements = selected.length ? selected : (["C"] as AtomSymbol[]);
   return Array.from({ length: count }, (_, index) => {
-    const symbol = settings.selectedElements[index % settings.selectedElements.length];
+    const symbol = elements[index % elements.length];
     return createAtom(symbol, rand(90, width - 90), rand(88, height - 88));
   });
 }

@@ -4,7 +4,7 @@ import { classifyBond } from "../simulation/chemistry";
 
 const PUBCHEM_BASE = "https://pubchem.ncbi.nlm.nih.gov/rest/pug";
 const PUBCHEM_AUTOCOMPLETE_BASE = "https://pubchem.ncbi.nlm.nih.gov/rest/autocomplete";
-const MAX_ATOMS = 90;
+const MAX_ATOMS = 240;
 const atomSymbols = new Set(Object.keys(atomData));
 
 type PubChemCids = {
