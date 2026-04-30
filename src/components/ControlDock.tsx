@@ -92,6 +92,19 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
             Color
           </button>
         </div>
+        <div className="projection-row" aria-label="Graphics quality">
+          {(["low", "medium", "high", "very-high"] as const).map((quality) => (
+            <button
+              key={quality}
+              className={settings.graphicsQuality === quality ? "visual-choice active" : "visual-choice"}
+              title={`Use ${quality.replace("-", " ")} graphics quality`}
+              onClick={() => onSetting("graphicsQuality", quality)}
+            >
+              <Gauge size={15} />
+              {quality === "very-high" ? "Very high" : quality[0].toUpperCase() + quality.slice(1)}
+            </button>
+          ))}
+        </div>
         <div className="projection-row" aria-label="Analysis mode">
           <button className={settings.analysisMode === "structure" ? "visual-choice active" : "visual-choice"} title="Clean structural view with zoom-based abstraction" onClick={() => onSetting("analysisMode", "structure")}>
             <Box size={15} />

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type PointerEvent } from "react";
-import { Box, Crosshair, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import { Box, Crosshair, Maximize2, Minimize2, ZoomIn, ZoomOut } from "lucide-react";
 import { atomData } from "../data/atoms";
-import type { AtomParticle, Bond, ProjectionMode, SimulationSettings, SimulationState } from "../types";
+import type { AtomParticle, Bond, GraphicsQuality, ProjectionMode, SimulationSettings, SimulationState } from "../types";
 import { detectFunctionalGroups, type FunctionalGroup } from "../simulation/functionalGroups";
 import { buildMoleculeGraph, structuralBonds } from "../simulation/graph";
 import { analyzeAtomGeometry } from "../simulation/vsepr";
@@ -20,7 +20,7 @@ type Props = {
 type Vec3 = { x: number; y: number; z: number };
 type Camera3D = { yaw: number; pitch: number; panX: number; panY: number; fitZoom: number };
 type SceneAtom = AtomParticle & Vec3;
-type ProjectedAtom = SceneAtom & { sx: number; sy: number; depth: number; screenRadius: number; paintDepth: number; surfaceDepth: number };
+type ProjectedAtom = SceneAtom & { sx: number; sy: number; depth: number; screenRadius: number; paintDepth: number; surfaceDepth: number; sceneSize: number };
 type LonePairCloud = Vec3 & { id: string; centerId: string; radius: number; direction: Vec3 };
 type ProjectedLonePair = LonePairCloud & { sx: number; sy: number; depth: number; screenRadius: number };
 type RenderBudget = { detailedEffects: boolean; overlays: boolean; labels: boolean };
@@ -67,6 +67,7 @@ type WebGLMesh = {
 };
 type WebGLRendererState = {
   gl: WebGLRenderingContext;
+  quality: GraphicsQuality;
   program: WebGLProgram;
   locations: {
     position: number;
@@ -90,6 +91,7 @@ type WebGLRendererState = {
     viewport: WebGLUniformLocation | null;
     pan: WebGLUniformLocation | null;
     depthOffset: WebGLUniformLocation | null;
+    vertexPerspective: WebGLUniformLocation | null;
   };
   sphere: WebGLMesh;
   sphereLow: WebGLMesh;
@@ -107,7 +109,7 @@ type InteractionContext = {
   focusIds: Set<string> | null;
 };
 
-const devicePixelRatioSafe = () => Math.min(window.devicePixelRatio || 1, 2);
+const devicePixelRatioSafe = (quality: GraphicsQuality) => Math.min(window.devicePixelRatio || 1, graphicsQualityProfile(quality).dprCap);
 
 const defaultCamera: Camera3D = { yaw: -0.62, pitch: 0.46, panX: 0, panY: 0, fitZoom: 1 };
 
@@ -133,6 +135,7 @@ export function Molecule3DView({ state, settings, running, width, height, onResi
   const [camera, setCamera] = useState<Camera3D>(defaultCamera);
   const [hoveredAtomId, setHoveredAtomId] = useState<string | null>(null);
   const [hoveredBondId, setHoveredBondId] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const sceneAtoms = useMemo(
     () => buildSceneAtoms(state.atoms, state.bonds, settings, state.time),
     [settings.collisionStrength, settings.geometryAssist, settings.geometryMode, settings.relaxationStrength, settings.speed, settings.temperature, state.atoms, state.bonds, state.time]
@@ -156,7 +159,7 @@ export function Molecule3DView({ state, settings, running, width, height, onResi
     const canvas = canvasRef.current;
     const webglCanvas = webglCanvasRef.current;
     if (!canvas) return;
-    const dpr = devicePixelRatioSafe();
+    const dpr = devicePixelRatioSafe(settings.graphicsQuality);
     canvas.width = Math.floor(width * dpr);
     canvas.height = Math.floor(height * dpr);
     canvas.style.width = `${width}px`;
@@ -178,6 +181,12 @@ export function Molecule3DView({ state, settings, running, width, height, onResi
       draw3D(ctx, sceneAtoms, state.atoms, state.bonds, settings, camera, width, height, hoveredAtomId, hoveredBondId, longHover, state.time, state.selectedAtomId);
     }
   }, [camera, height, hoveredAtomId, hoveredBondId, sceneAtoms, settings, state.atoms, state.bonds, state.time, state.selectedAtomId, width]);
+
+  useEffect(() => {
+    const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === wrapRef.current);
+    document.addEventListener("fullscreenchange", handleFullscreen);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreen);
+  }, []);
 
   useEffect(() => {
     const presetName = settings.cameraPreset;
@@ -278,6 +287,15 @@ export function Molecule3DView({ state, settings, running, width, height, onResi
     setZoom(1);
     setCamera(frameCameraFor(sceneAtoms, defaultCamera, settings, width, height));
   };
+  const toggleFullscreen = async () => {
+    const target = wrapRef.current;
+    if (!target) return;
+    if (document.fullscreenElement === target) {
+      await document.exitFullscreen();
+      return;
+    }
+    await target.requestFullscreen();
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -318,6 +336,9 @@ export function Molecule3DView({ state, settings, running, width, height, onResi
         <button title="Zoom in" onClick={() => setZoom(settings.zoom + 0.12)}><ZoomIn size={17} /></button>
         <button title="Fit molecule" onClick={fitMolecule}><Crosshair size={17} /></button>
         <button title="Reset view" onClick={resetCamera}><Maximize2 size={17} /></button>
+        <button title={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
+          {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+        </button>
       </div>
       <aside className="camera-guide" aria-label="Camera controls guide">
         <strong>Camera</strong>
@@ -360,7 +381,7 @@ function buildSceneAtoms(atoms: AtomParticle[], bonds: Bond[], settings: Simulat
     } else {
       placeFlatComponent(component, placed, offset);
     }
-    componentOffset += Math.max(3.4, Math.sqrt(component.length) * 1.45);
+    componentOffset += Math.max(3.4, largeMoleculeTargetSpan(component.length) * 1.15);
   }
 
   centerScene(placed);
@@ -370,6 +391,7 @@ function buildSceneAtoms(atoms: AtomParticle[], bonds: Bond[], settings: Simulat
 
 function apply3DControlResponse(placed: Map<string, Vec3>, atoms: AtomParticle[], bonds: Bond[], settings: SimulationSettings, time: number) {
   if (settings.geometryMode === "rigid") return;
+  if (atoms.length > 64) return;
   const relaxation = clamp(settings.relaxationStrength / 1.2, 0, 1);
   const livePoints = normalizedLivePoints(atoms);
   const liveBlend = settings.geometryAssist
@@ -503,16 +525,27 @@ function placeVseprComponent(component: AtomParticle[], bonds: Bond[], graph: Re
 function placeFlatComponent(component: AtomParticle[], placed: Map<string, Vec3>, offset: Vec3) {
   const xs = component.map((atom) => atom.x);
   const ys = component.map((atom) => atom.y);
+  const zs = component.map((atom) => atom.z ?? 0);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const scale = 1 / Math.max(80, Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) / 5);
+  const cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+  const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), (Math.max(...zs) - Math.min(...zs)) * 1.4);
+  const targetSpan = largeMoleculeTargetSpan(component.length);
+  const scale = targetSpan / Math.max(80, span);
   for (const atom of component) {
     placed.set(atom.id, {
       x: offset.x + (atom.x - cx) * scale,
       y: (atom.y - cy) * scale,
-      z: (atom.z ?? 0) / 120
+      z: ((atom.z ?? 0) - cz) * scale * 0.86
     });
   }
+}
+
+function largeMoleculeTargetSpan(atomCount: number) {
+  if (atomCount > 120) return clamp(Math.sqrt(atomCount) * 1.36, 14, 22);
+  if (atomCount > 72) return clamp(Math.sqrt(atomCount) * 1.24, 11, 17);
+  if (atomCount > 36) return clamp(Math.sqrt(atomCount) * 1.04, 7.2, 12);
+  return 5.2;
 }
 
 function connectedComponents(atoms: AtomParticle[], bonds: Bond[]) {
@@ -577,7 +610,7 @@ function draw3D(ctx: CanvasRenderingContext2D, atoms: SceneAtom[], sourceAtoms: 
   const detailLevel = detailLevelFor(settings);
   const interaction = buildInteractionContext(sourceAtoms, bonds, settings, selectedAtomId, hoveredAtomId, hoveredBondId, longHover);
   const projected = applyProjectedEmphasis(projectAtoms(atoms, camera, width, height, settings), interaction, settings);
-  const budget = renderBudgetFor(projected);
+  const budget = renderBudgetFor(projected, settings);
   const showChemistryDetail = settings.analysisMode === "chemistry" && detailLevel === "detail";
   const showLonePairDetail = budget.overlays && settings.highlightLonePairs && detailLevel !== "abstract";
   const lonePairs = (showLonePairDetail || showChemistryDetail && settings.showElectronRegions) ? projectLonePairs(lonePairClouds(atoms, bonds), camera, width, height, settings) : [];
@@ -615,7 +648,7 @@ function draw3DOverlay(ctx: CanvasRenderingContext2D, atoms: SceneAtom[], source
   const detailLevel = detailLevelFor(settings);
   const interaction = buildInteractionContext(sourceAtoms, bonds, settings, selectedAtomId, hoveredAtomId, hoveredBondId, longHover);
   const projected = applyProjectedEmphasis(projectAtoms(atoms, camera, width, height, settings), interaction, settings);
-  const budget = renderBudgetFor(projected);
+  const budget = renderBudgetFor(projected, settings);
   const showChemistryDetail = settings.analysisMode === "chemistry" && detailLevel === "detail";
   const byId = new Map(projected.map((atom) => [atom.id, atom]));
   const visibleBonds = structuralBonds(bonds).filter((bond) => bondVisibleInMode(bond, byId, settings));
@@ -679,22 +712,32 @@ function projectedAtomOverlayVisible(atom: ProjectedAtom, atoms: ProjectedAtom[]
   return true;
 }
 
-function modelWorldRadiusFor(atom: Pick<SceneAtom, "symbol">) {
+function modelWorldRadiusFor(atom: Pick<SceneAtom, "symbol">, sceneSize = 1) {
   const covalent = atomData[atom.symbol].covalentRadius;
-  if (atom.symbol === "H") return 0.12;
-  if (atom.symbol === "He") return 0.14;
+  const scale = largeMoleculeAtomScale(sceneSize);
+  if (atom.symbol === "H") return 0.12 * scale;
+  if (atom.symbol === "He") return 0.14 * scale;
   const base = 0.19 + (covalent - 70) * 0.00125;
-  return clamp(base, 0.17, 0.34);
+  return clamp(base * scale, 0.11, 0.34);
 }
 
-function modelScreenRadiusSource(atom: Pick<SceneAtom, "symbol">) {
-  const radius = modelWorldRadiusFor(atom);
+function modelScreenRadiusSource(atom: Pick<SceneAtom, "symbol">, sceneSize = 1) {
+  const radius = modelWorldRadiusFor(atom, sceneSize);
   const detailLift = atom.symbol === "H" ? 0.98 : 1.08;
   return radius * 104 * detailLift;
 }
 
 function modelScreenRadius(atom: ProjectedAtom) {
-  return clamp(atom.screenRadius, atom.symbol === "H" ? 9 : 14, atom.symbol === "H" ? 18 : 34);
+  const scale = largeMoleculeAtomScale(atom.sceneSize);
+  return clamp(atom.screenRadius, atom.symbol === "H" ? 7 * scale : 10 * scale, atom.symbol === "H" ? 18 : 34);
+}
+
+function largeMoleculeAtomScale(atomCount: number) {
+  if (atomCount > 150) return 0.52;
+  if (atomCount > 96) return 0.58;
+  if (atomCount > 56) return 0.68;
+  if (atomCount > 32) return 0.82;
+  return 1;
 }
 
 function renderWebGL3D(
@@ -714,7 +757,9 @@ function renderWebGL3D(
   selectedAtomId: string | null,
   dpr: number
 ) {
-  const renderer = rendererRef.current ?? createWebGLRenderer(canvas);
+  const renderer = rendererRef.current?.quality === settings.graphicsQuality
+    ? rendererRef.current
+    : createWebGLRenderer(canvas, settings.graphicsQuality);
   if (!renderer) return false;
   rendererRef.current = renderer;
 
@@ -737,7 +782,7 @@ function renderWebGL3D(
   const scale = Math.min(width, height) * profile.scale * totalZoom * 1.08;
   const interaction = buildInteractionContext(sourceAtoms, bonds, settings, selectedAtomId, hoveredAtomId, hoveredBondId, longHover);
   const projected = applyProjectedEmphasis(projectAtoms(atoms, camera, width, height, settings), interaction, settings);
-  const budget = renderBudgetFor(projected);
+  const budget = renderBudgetFor(projected, settings);
   const byId = new Map(projected.map((atom) => [atom.id, atom]));
   const visibleBonds = structuralBonds(bonds).filter((bond) => bondVisibleInMode(bond, byId, settings));
   const worldRadii = new Map(projected.map((atom) => [atom.id, webGLWorldRadius(atom)]));
@@ -773,13 +818,15 @@ function renderWebGL3D(
   return true;
 }
 
-function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRendererState | null {
+function createWebGLRenderer(canvas: HTMLCanvasElement, quality: GraphicsQuality): WebGLRendererState | null {
   const gl = canvas.getContext("webgl", { alpha: true, antialias: true, depth: true, premultipliedAlpha: false });
   if (!gl) return null;
   const program = createWebGLProgram(gl, webGLVertexShader, webGLFragmentShader);
   if (!program) return null;
+  const profile = graphicsQualityProfile(quality);
   return {
     gl,
+    quality,
     program,
     locations: {
       position: gl.getAttribLocation(program, "aPosition"),
@@ -802,12 +849,13 @@ function createWebGLRenderer(canvas: HTMLCanvasElement): WebGLRendererState | nu
       maxPerspective: gl.getUniformLocation(program, "uMaxPerspective"),
       viewport: gl.getUniformLocation(program, "uViewport"),
       pan: gl.getUniformLocation(program, "uPan"),
-      depthOffset: gl.getUniformLocation(program, "uDepthOffset")
+      depthOffset: gl.getUniformLocation(program, "uDepthOffset"),
+      vertexPerspective: gl.getUniformLocation(program, "uVertexPerspective")
     },
-    sphere: createWebGLMesh(gl, createSphereGeometry(30, 40)),
-    sphereLow: createWebGLMesh(gl, createSphereGeometry(16, 22)),
-    cylinder: createWebGLMesh(gl, createCylinderGeometry(32)),
-    lonePair: createWebGLMesh(gl, createLonePairGeometry(18, 24))
+    sphere: createWebGLMesh(gl, createSphereGeometry(profile.sphereRows, profile.sphereColumns)),
+    sphereLow: createWebGLMesh(gl, createSphereGeometry(profile.sphereLowRows, profile.sphereLowColumns)),
+    cylinder: createWebGLMesh(gl, createCylinderGeometry(profile.cylinderSegments)),
+    lonePair: createWebGLMesh(gl, createLonePairGeometry(profile.lonePairRows, profile.lonePairColumns))
   };
 }
 
@@ -823,21 +871,26 @@ function drawWebGLBonds(renderer: WebGLRendererState, atoms: ProjectedAtom[], bo
     const dir = normalizeVec({ x: endCenter.x - startCenter.x, y: endCenter.y - startCenter.y, z: endCenter.z - startCenter.z });
     const distance = Math.hypot(endCenter.x - startCenter.x, endCenter.y - startCenter.y, endCenter.z - startCenter.z);
     if (distance <= 0.01) continue;
-    const start = startCenter;
-    const end = endCenter;
-    const visibleLength = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z);
-    if (visibleLength <= 0.02) continue;
     const offsetDir = stablePerpendicular(dir, view);
     const lanes = bond.order === 1 ? [0] : bond.order === 2 ? [-1, 1] : [-1.45, 0, 1.45];
     const baseTube = clamp(0.045 - (bond.order - 1) * 0.005, 0.032, 0.052);
     const active = interaction.activeBondIds.has(bond.id) || interaction.hoveredBondId === bond.id;
     const focusAlpha = interaction.focusIds && !interaction.focusIds.has(a.id) && !interaction.focusIds.has(b.id) ? 0.24 : 1;
-    const depthOffset = -0.004;
+    const depthOffset = 0.008;
+    const laneGap = baseTube * (bond.order === 1 ? 0 : bond.order === 2 ? 1.72 : 2.02);
     for (const lane of lanes) {
-      const offset = lane * baseTube * 2.75;
-      const laneStart = { x: start.x + offsetDir.x * offset, y: start.y + offsetDir.y * offset, z: start.z + offsetDir.z * offset };
-      const laneEnd = { x: end.x + offsetDir.x * offset, y: end.y + offsetDir.y * offset, z: end.z + offsetDir.z * offset };
+      const offset = lane * laneGap;
       const tubeRadius = baseTube * (active ? 1.32 : 1);
+      const laneStart = {
+        x: startCenter.x + offsetDir.x * offset,
+        y: startCenter.y + offsetDir.y * offset,
+        z: startCenter.z + offsetDir.z * offset
+      };
+      const laneEnd = {
+        x: endCenter.x + offsetDir.x * offset,
+        y: endCenter.y + offsetDir.y * offset,
+        z: endCenter.z + offsetDir.z * offset
+      };
       const colorA = rgbUnit(bondAtomTubeColor(a, settings));
       const colorB = rgbUnit(bondAtomTubeColor(b, settings));
       const baseColor = {
@@ -849,7 +902,7 @@ function drawWebGLBonds(renderer: WebGLRendererState, atoms: ProjectedAtom[], bo
         ? mixRgb(baseColor, rgbUnit(settings.theme === "light" ? "#14b8a6" : "#5eead4"), 0.36)
         : baseColor;
       const alpha = focusAlpha >= 0.99 ? 1 : clamp(focusAlpha, 0.14, 1);
-      drawWebGLMesh(renderer, renderer.cylinder, cylinderMatrix(laneStart, laneEnd, tubeRadius), tubeColor, alpha, depthOffset);
+      drawWebGLMesh(renderer, renderer.cylinder, cylinderMatrix(laneStart, laneEnd, tubeRadius), tubeColor, alpha, depthOffset, true);
     }
   }
 }
@@ -1032,10 +1085,10 @@ function drawWebGLLonePairs(renderer: WebGLRendererState, sceneAtoms: SceneAtom[
 }
 
 function webGLWorldRadius(atom: ProjectedAtom) {
-  return modelWorldRadiusFor(atom);
+  return modelWorldRadiusFor(atom, atom.sceneSize);
 }
 
-function drawWebGLMesh(renderer: WebGLRendererState, mesh: WebGLMesh, model: number[], color: { r: number; g: number; b: number }, alpha: number, depthOffset: number) {
+function drawWebGLMesh(renderer: WebGLRendererState, mesh: WebGLMesh, model: number[], color: { r: number; g: number; b: number }, alpha: number, depthOffset: number, vertexPerspective = false) {
   const gl = renderer.gl;
   gl.bindBuffer(gl.ARRAY_BUFFER, mesh.positions);
   gl.enableVertexAttribArray(renderer.locations.position);
@@ -1048,6 +1101,7 @@ function drawWebGLMesh(renderer: WebGLRendererState, mesh: WebGLMesh, model: num
   gl.uniform3f(renderer.locations.color, color.r, color.g, color.b);
   gl.uniform1f(renderer.locations.alpha, alpha);
   gl.uniform1f(renderer.locations.depthOffset, depthOffset);
+  gl.uniform1f(renderer.locations.vertexPerspective, vertexPerspective ? 1 : 0);
   gl.depthMask(alpha > 0.96);
   gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
   gl.depthMask(true);
@@ -1175,6 +1229,7 @@ uniform float uMaxPerspective;
 uniform vec2 uViewport;
 uniform vec2 uPan;
 uniform float uDepthOffset;
+uniform float uVertexPerspective;
 varying vec3 vNormal;
 varying vec3 vViewNormal;
 
@@ -1195,7 +1250,9 @@ void main() {
   vec3 local = world - center;
   vec3 rotatedCenter = rotateView(vec3(center.x, center.y, center.z * uDepthBoost));
   vec3 rotated = rotatedCenter + rotateView(local);
-  float perspective = uDistance > 9999.0 ? 1.0 : clamp(uDistance / max(1.1, uDistance - rotatedCenter.z), uMinPerspective, uMaxPerspective);
+  float centerPerspective = uDistance > 9999.0 ? 1.0 : clamp(uDistance / max(1.1, uDistance - rotatedCenter.z), uMinPerspective, uMaxPerspective);
+  float vertexPerspective = uDistance > 9999.0 ? 1.0 : clamp(uDistance / max(1.1, uDistance - rotated.z), uMinPerspective, uMaxPerspective);
+  float perspective = mix(centerPerspective, vertexPerspective, uVertexPerspective);
   float sx = uViewport.x * 0.5 + uPan.x + rotated.x * uScale * perspective;
   float sy = uViewport.y * 0.5 + uPan.y + rotated.y * uScale * perspective;
   float clipX = sx / uViewport.x * 2.0 - 1.0;
@@ -1238,14 +1295,15 @@ void main() {
 `;
 
 function projectAtoms(atoms: SceneAtom[], camera: Camera3D, width: number, height: number, settings: SimulationSettings): ProjectedAtom[] {
-  return atoms.map((atom) => ({ ...atom, ...projectPoint(atom, modelScreenRadiusSource(atom), camera, width, height, settings) }));
+  const minRadius = atoms.length > 96 ? 4.8 : atoms.length > 56 ? 5.8 : 8;
+  return atoms.map((atom) => ({ ...atom, ...projectPoint(atom, modelScreenRadiusSource(atom, atoms.length), camera, width, height, settings, minRadius), sceneSize: atoms.length }));
 }
 
 function projectLonePairs(clouds: LonePairCloud[], camera: Camera3D, width: number, height: number, settings: SimulationSettings): ProjectedLonePair[] {
   return clouds.map((cloud) => ({ ...cloud, ...projectPoint(cloud, cloud.radius, camera, width, height, settings) }));
 }
 
-function projectPoint(point: Vec3, radius: number, camera: Camera3D, width: number, height: number, settings: SimulationSettings) {
+function projectPoint(point: Vec3, radius: number, camera: Camera3D, width: number, height: number, settings: SimulationSettings, minScreenRadius = 8) {
   const profile = projectionProfile(settings.projectionMode);
   const totalZoom = settings.zoom * camera.fitZoom;
   const scale = Math.min(width, height) * profile.scale * totalZoom;
@@ -1258,20 +1316,82 @@ function projectPoint(point: Vec3, radius: number, camera: Camera3D, width: numb
     sx: width / 2 + camera.panX + rotated.x * scale * perspective,
     sy: height / 2 + camera.panY + rotated.y * scale * perspective,
     depth: rotated.z,
-    screenRadius: clamp(radius * radiusPerspective * totalZoom, 8, 82),
+    screenRadius: clamp(radius * radiusPerspective * totalZoom, minScreenRadius, 82),
     paintDepth: rotated.z,
     surfaceDepth: rotated.z
   };
 }
 
-function renderBudgetFor(atoms: ProjectedAtom[]): RenderBudget {
+function renderBudgetFor(atoms: ProjectedAtom[], settings: SimulationSettings): RenderBudget {
+  const profile = graphicsQualityProfile(settings.graphicsQuality);
   const maxRadius = atoms.reduce((max, atom) => Math.max(max, atom.screenRadius), 0);
   const heavy = atoms.length > 36 || maxRadius > 72;
   const veryHeavy = atoms.length > 120;
   return {
-    detailedEffects: !heavy,
-    overlays: atoms.length <= 90,
-    labels: !veryHeavy
+    detailedEffects: profile.detailMultiplier > 0.45 && (!heavy || profile.detailMultiplier > 1.1 && atoms.length <= 64),
+    overlays: atoms.length <= profile.overlayLimit,
+    labels: !veryHeavy && atoms.length <= profile.labelLimit
+  };
+}
+
+function graphicsQualityProfile(quality: GraphicsQuality) {
+  if (quality === "low") {
+    return {
+      dprCap: 1,
+      sphereRows: 12,
+      sphereColumns: 16,
+      sphereLowRows: 8,
+      sphereLowColumns: 12,
+      cylinderSegments: 12,
+      lonePairRows: 8,
+      lonePairColumns: 12,
+      overlayLimit: 48,
+      labelLimit: 38,
+      detailMultiplier: 0.35
+    };
+  }
+  if (quality === "medium") {
+    return {
+      dprCap: 1.35,
+      sphereRows: 20,
+      sphereColumns: 26,
+      sphereLowRows: 12,
+      sphereLowColumns: 16,
+      cylinderSegments: 20,
+      lonePairRows: 12,
+      lonePairColumns: 16,
+      overlayLimit: 72,
+      labelLimit: 56,
+      detailMultiplier: 0.75
+    };
+  }
+  if (quality === "very-high") {
+    return {
+      dprCap: 2.25,
+      sphereRows: 42,
+      sphereColumns: 58,
+      sphereLowRows: 22,
+      sphereLowColumns: 30,
+      cylinderSegments: 48,
+      lonePairRows: 26,
+      lonePairColumns: 34,
+      overlayLimit: 130,
+      labelLimit: 96,
+      detailMultiplier: 1.25
+    };
+  }
+  return {
+    dprCap: 1.8,
+    sphereRows: 30,
+    sphereColumns: 40,
+    sphereLowRows: 16,
+    sphereLowColumns: 22,
+    cylinderSegments: 32,
+    lonePairRows: 18,
+    lonePairColumns: 24,
+    overlayLimit: 90,
+    labelLimit: 72,
+    detailMultiplier: 1
   };
 }
 
@@ -1378,9 +1498,10 @@ function applyProjectedEmphasis(atoms: ProjectedAtom[], interaction: Interaction
   return atoms.map((atom) => {
     const scale = emphasisScaleForAtom(atom, interaction);
     if (scale === 1) return atom;
+    const minRadius = atom.sceneSize > 96 ? 5.2 : atom.sceneSize > 56 ? 6.2 : 10;
     return {
       ...atom,
-      screenRadius: clamp(atom.screenRadius * scale, 10, 92)
+      screenRadius: clamp(atom.screenRadius * scale, minRadius, 92)
     };
   });
 }
@@ -1834,7 +1955,8 @@ function projectWorldShadowAtoms(atoms: SceneAtom[], camera: Camera3D, width: nu
       x: shadowPoint.x,
       y: shadowPoint.y,
       z: shadowPoint.z,
-      ...projectPoint(shadowPoint, atom.radius * 0.34, camera, width, height, settings)
+      ...projectPoint(shadowPoint, atom.radius * 0.34, camera, width, height, settings),
+      sceneSize: atoms.length
     };
   });
 }

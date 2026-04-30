@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { Download, Maximize2, ZoomIn, ZoomOut } from "lucide-react";
+import { Download, Maximize2, Minimize2, ZoomIn, ZoomOut } from "lucide-react";
 import { atomData } from "../data/atoms";
-import type { AtomParticle, Bond, SimulationSettings, SimulationState } from "../types";
+import type { AtomParticle, Bond, GraphicsQuality, SimulationSettings, SimulationState } from "../types";
 import { bondKindLabel } from "../simulation/chemistry";
 import { detectFunctionalGroups } from "../simulation/functionalGroups";
 
@@ -17,7 +17,7 @@ type Props = {
   onZoom: (zoom: number) => void;
 };
 
-const devicePixelRatioSafe = () => Math.min(window.devicePixelRatio || 1, 2);
+const devicePixelRatioSafe = (quality: GraphicsQuality) => Math.min(window.devicePixelRatio || 1, graphicsQualityProfile(quality).dprCap);
 type BondSegment = { ux: number; uy: number; px: number; py: number; startX: number; startY: number; endX: number; endY: number };
 const lightDirection = { x: -0.44, y: -0.5 };
 
@@ -26,6 +26,7 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [hoveredBondId, setHoveredBondId] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -40,7 +41,7 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = devicePixelRatioSafe();
+    const dpr = devicePixelRatioSafe(settings.graphicsQuality);
     canvas.width = Math.floor(width * dpr);
     canvas.height = Math.floor(height * dpr);
     canvas.style.width = `${width}px`;
@@ -50,6 +51,12 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw(ctx, state, settings, width, height, hoveredBondId);
   }, [height, hoveredBondId, settings, state, width]);
+
+  useEffect(() => {
+    const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === wrapRef.current);
+    document.addEventListener("fullscreenchange", handleFullscreen);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreen);
+  }, []);
 
   const pointerPoint = (event: PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -119,6 +126,16 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     link.click();
   };
 
+  const toggleFullscreen = async () => {
+    const target = wrapRef.current;
+    if (!target) return;
+    if (document.fullscreenElement === target) {
+      await document.exitFullscreen();
+      return;
+    }
+    await target.requestFullscreen();
+  };
+
   return (
     <div className="simulation-wrap" ref={wrapRef}>
       <canvas
@@ -142,6 +159,9 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
         <button title="Reset zoom" onClick={() => setZoom(1)}>
           <Maximize2 size={17} />
         </button>
+        <button title={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
+          {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+        </button>
         <button title="Export PNG" onClick={exportImage}>
           <Download size={17} />
         </button>
@@ -159,6 +179,13 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
       )}
     </div>
   );
+}
+
+function graphicsQualityProfile(quality: GraphicsQuality) {
+  if (quality === "low") return { dprCap: 1 };
+  if (quality === "medium") return { dprCap: 1.35 };
+  if (quality === "very-high") return { dprCap: 2.25 };
+  return { dprCap: 1.8 };
 }
 
 function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings, width: number, height: number, hoveredBondId: string | null) {
@@ -418,7 +445,7 @@ function screenToWorld(screenX: number, screenY: number, width: number, height: 
 }
 
 function isDetailed(settings: SimulationSettings) {
-  return settings.visualStyle === "detailed" && (settings.analysisMode === "chemistry" || detailLevelFor2D(settings) === "detail");
+  return settings.graphicsQuality !== "low" && settings.visualStyle === "detailed" && (settings.analysisMode === "chemistry" || detailLevelFor2D(settings) === "detail");
 }
 
 function palette(settings: SimulationSettings) {

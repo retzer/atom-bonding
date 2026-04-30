@@ -14,6 +14,7 @@ export type CameraPreset = "free" | "top" | "side" | "isometric";
 export type StructureDisplayMode = "full" | "simplified" | "skeleton";
 export type AnalysisMode = "structure" | "chemistry";
 export type GeometryMode = "rigid" | "flexible";
+export type GraphicsQuality = "low" | "medium" | "high" | "very-high";
 
 export type AtomSymbol =
   | "H"
@@ -189,6 +190,7 @@ export type SimulationSettings = {
   zoom: number;
   theme: ThemeMode;
   visualStyle: VisualStyle;
+  graphicsQuality: GraphicsQuality;
   projectionMode: ProjectionMode;
   cameraPreset: CameraPreset;
   lightYaw: number;

@@ -19,6 +19,7 @@ export const defaultSettings: SimulationSettings = {
   zoom: 1,
   theme: "light",
   visualStyle: "detailed",
+  graphicsQuality: "high",
   projectionMode: "soft-perspective",
   cameraPreset: "free",
   lightYaw: -42,
@@ -384,6 +385,7 @@ export function useSimulation() {
       settings: {
         theme: settings.theme,
         visualStyle: settings.visualStyle,
+        graphicsQuality: settings.graphicsQuality,
         projectionMode: settings.projectionMode,
         cameraPreset: settings.cameraPreset,
         lightYaw: settings.lightYaw,
