@@ -151,10 +151,16 @@ export function createPresetState(width: number, height: number, preset: Molecul
 
 export function stepSimulation(state: SimulationState, settings: SimulationSettings, width: number, height: number, rawDt: number): SimulationState {
   const rigid = settings.geometryMode === "rigid";
+  const worldBounds = {
+    minX: -width * 1.25,
+    maxX: width * 2.25,
+    minY: -height * 1.25,
+    maxY: height * 2.25
+  };
   const dt = Math.min(0.04, rawDt * settings.speed * (rigid ? settings.geometry3D ? 0.42 : 0.58 : settings.geometry3D ? 0.5 : 1));
-  const thermalMotion = rigid ? settings.temperature * 0.018 : settings.geometry3D ? settings.temperature * 0.12 : settings.temperature;
-  const collisionStrength = rigid ? settings.collisionStrength * (settings.geometry3D ? 0.045 : 0.08) : settings.geometry3D ? settings.collisionStrength * 0.18 : settings.collisionStrength;
-  const motionScale = rigid ? settings.geometry3D ? 7 : 11 : settings.geometry3D ? 9 + settings.temperature * 2 : 24 + settings.temperature * 8;
+  const thermalMotion = rigid ? settings.temperature * 0.004 : settings.geometry3D ? settings.temperature * 0.12 : settings.temperature;
+  const collisionStrength = rigid ? settings.collisionStrength * (settings.geometry3D ? 0.045 : 0.04) : settings.geometry3D ? settings.collisionStrength * 0.18 : settings.collisionStrength;
+  const motionScale = rigid ? settings.geometry3D ? 4 : 5 : settings.geometry3D ? 9 + settings.temperature * 2 : 24 + settings.temperature * 8;
   const atoms = state.atoms.map((atom) => ({ ...atom, bonds: [] as string[] }));
   const bonds = state.bonds.map((bond) => ({ ...bond }));
   const effects = state.effects
@@ -174,7 +180,7 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
 
   for (const atom of atoms) {
     if (atom.guided && atom.targetX !== undefined && atom.targetY !== undefined) {
-      const targetPull = rigid ? settings.geometry3D ? 0.72 : 0.9 : 0.34;
+      const targetPull = rigid ? settings.geometry3D ? 0.85 : 1.1 : 0.34;
       atom.vx += (atom.targetX - atom.x) * targetPull * dt;
       atom.vy += (atom.targetY - atom.y) * targetPull * dt;
       if (settings.geometry3D && atom.targetZ !== undefined) {
@@ -185,20 +191,20 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
       atom.vy += rand(-1, 1) * thermalMotion * 8 * dt;
       atom.vz = (atom.vz ?? 0) + rand(-1, 1) * thermalMotion * 1.8 * dt;
     }
-    atom.vx *= rigid ? settings.geometry3D ? 0.88 : 0.78 : settings.geometry3D ? 0.94 : 0.996;
-    atom.vy *= rigid ? settings.geometry3D ? 0.88 : 0.78 : settings.geometry3D ? 0.94 : 0.996;
-    atom.vz = (atom.vz ?? 0) * (settings.geometry3D ? rigid ? 0.84 : 0.9 : rigid ? 0.78 : 0.992);
+    atom.vx *= rigid ? settings.geometry3D ? 0.72 : 0.55 : settings.geometry3D ? 0.94 : 0.996;
+    atom.vy *= rigid ? settings.geometry3D ? 0.72 : 0.55 : settings.geometry3D ? 0.94 : 0.996;
+    atom.vz = (atom.vz ?? 0) * (settings.geometry3D ? rigid ? 0.68 : 0.6 : rigid ? 0.55 : 0.992);
     atom.x += atom.vx * dt * motionScale;
     atom.y += atom.vy * dt * motionScale;
     atom.z = settings.geometry3D ? (atom.z ?? 0) + (atom.vz ?? 0) * dt * motionScale : 0;
     const useViewportWalls = !settings.geometry3D || (!atom.guided && atom.bonds.length === 0);
-    if (useViewportWalls && (atom.x < atom.radius + 8 || atom.x > width - atom.radius - 8)) {
+    if (useViewportWalls && (atom.x < worldBounds.minX + atom.radius + 8 || atom.x > worldBounds.maxX - atom.radius - 8)) {
       atom.vx *= -0.88;
-      atom.x = clamp(atom.x, atom.radius + 8, width - atom.radius - 8);
+      atom.x = clamp(atom.x, worldBounds.minX + atom.radius + 8, worldBounds.maxX - atom.radius - 8);
     }
-    if (useViewportWalls && (atom.y < atom.radius + 8 || atom.y > height - atom.radius - 8)) {
+    if (useViewportWalls && (atom.y < worldBounds.minY + atom.radius + 8 || atom.y > worldBounds.maxY - atom.radius - 8)) {
       atom.vy *= -0.88;
-      atom.y = clamp(atom.y, atom.radius + 8, height - atom.radius - 8);
+      atom.y = clamp(atom.y, worldBounds.minY + atom.radius + 8, worldBounds.maxY - atom.radius - 8);
     }
     atom.z = clamp(atom.z ?? 0, -160, 160);
   }
@@ -220,7 +226,7 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     b.y -= ny * correction;
     const sharedVx = (a.vx + b.vx) * 0.5;
     const sharedVy = (a.vy + b.vy) * 0.5;
-    const selfVelocity = rigid ? 0.72 : 0.88;
+    const selfVelocity = rigid ? 0.95 : 0.88;
     const sharedVelocity = 1 - selfVelocity;
     a.vx = a.vx * selfVelocity + sharedVx * sharedVelocity;
     a.vy = a.vy * selfVelocity + sharedVy * sharedVelocity;
@@ -228,6 +234,12 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     b.vy = b.vy * selfVelocity + sharedVy * sharedVelocity;
   }
 
+  const bondedSet = new Set<string>();
+  for (let bi = 0; bi < bonds.length; bi += 1) {
+    const b = bonds[bi];
+    bondedSet.add(`${b.a}|${b.b}`);
+    bondedSet.add(`${b.b}|${b.a}`);
+  }
   for (let i = 0; i < atoms.length; i += 1) {
     for (let j = i + 1; j < atoms.length; j += 1) {
       const a = atoms[i];
@@ -238,7 +250,7 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
       const dist = Math.max(0.01, settings.geometry3D ? Math.hypot(dx, dy, dz) : Math.hypot(dx, dy));
       const formationDistance = settings.geometry3D ? Math.hypot(dx, dy, dz * 0.55) : dist;
       const minDist = a.radius + b.radius + 10;
-      if (dist < minDist && !bonds.some((bond) => (bond.a === a.id && bond.b === b.id) || (bond.a === b.id && bond.b === a.id))) {
+      if (dist < minDist && !bondedSet.has(`${a.id}|${b.id}`)) {
         const nx = dx / dist;
         const ny = dy / dist;
         const nz = settings.geometry3D ? dz / dist : 0;
@@ -261,6 +273,8 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
       if (!state.metallicLattice && formationDistance < bondingRange && canBond(a, b, bonds, settings)) {
         const bond = makeBond(a, b, state.time, settings);
         bonds.push(bond);
+        bondedSet.add(`${a.id}|${b.id}`);
+        bondedSet.add(`${b.id}|${a.id}`);
         a.bonds.push(bond.id);
         b.bonds.push(bond.id);
         if (bond.kind === "ionic") applyIonCharges(a, b);
@@ -283,8 +297,8 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     next.x += next.vx * dt;
     next.y += next.vy * dt;
     const pad = 58;
-    if (next.x < pad || next.x > width - pad) next.vx *= -1;
-    if (next.y < pad || next.y > height - pad) next.vy *= -1;
+    if (next.x < worldBounds.minX + pad || next.x > worldBounds.maxX - pad) next.vx *= -1;
+    if (next.y < worldBounds.minY + pad || next.y > worldBounds.maxY - pad) next.vy *= -1;
     return next;
   });
   const hydrogenBonds = state.metallicLattice ? [] : findHydrogenBonds(atoms, bonds);

@@ -16,73 +16,9 @@ export type AnalysisMode = "structure" | "chemistry";
 export type GeometryMode = "rigid" | "flexible";
 export type GraphicsQuality = "low" | "medium" | "high" | "very-high";
 
-export type AtomSymbol =
-  | "H"
-  | "He"
-  | "Li"
-  | "Be"
-  | "B"
-  | "C"
-  | "N"
-  | "O"
-  | "F"
-  | "Ne"
-  | "Na"
-  | "Mg"
-  | "Al"
-  | "Si"
-  | "P"
-  | "S"
-  | "Cl"
-  | "Ar"
-  | "K"
-  | "Ca"
-  | "Sc"
-  | "Ti"
-  | "V"
-  | "Cr"
-  | "Mn"
-  | "Zn"
-  | "Ga"
-  | "Ge"
-  | "As"
-  | "Se"
-  | "Fe"
-  | "Co"
-  | "Ni"
-  | "Cu"
-  | "Ag"
-  | "Br"
-  | "Kr"
-  | "Rb"
-  | "Sr"
-  | "Y"
-  | "Zr"
-  | "Mo"
-  | "Pd"
-  | "Cd"
-  | "Sn"
-  | "Sb"
-  | "Te"
-  | "I"
-  | "Xe"
-  | "Cs"
-  | "Ba"
-  | "W"
-  | "Pt"
-  | "Au"
-  | "Hg"
-  | "Pb"
-  | "Bi";
+export type AtomSymbol = PeriodicElementSymbol;
 
-export type ElementGroup =
-  | "core-nonmetals"
-  | "halogens"
-  | "alkali-metals"
-  | "alkaline-earth-metals"
-  | "metalloids"
-  | "transition-metals"
-  | "noble-gases";
+export type ElementGroup = PeriodicElementCategory;
 
 export type AtomDefinition = {
   symbol: AtomSymbol;
@@ -231,10 +167,71 @@ export type MoleculePreset = {
   metallic?: boolean;
 };
 
+export type QuizQuestion = {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+};
+
+export type ViewportAnnotation = {
+  type: "label" | "arrow" | "highlight" | "pulse";
+  message: string;
+  atomId?: string;
+  bondId?: string;
+  delay: number;
+  duration: number;
+};
+
+export type LessonAnimationPart =
+  | { type: "spawn"; symbol: AtomSymbol; x: number; y: number }
+  | { type: "move"; atomIndex: number; targetX: number; targetY: number; duration?: number }
+  | { type: "bond"; atomA: number; atomB: number }
+  | { type: "ring"; atomIndex: number; color: string; radius: number }
+  | { type: "text"; message: string; position: "center" | "top" | "bottom"; duration: number }
+  | { type: "highlight"; atomIndex: number; color?: string; duration: number }
+  | { type: "pulse"; atomIndex: number; duration: number }
+  | { type: "arrow"; fromIndex: number; toIndex: number; color?: string; duration: number }
+  | { type: "label"; atomIndex: number; text: string; position: "top" | "bottom" | "left" | "right"; duration: number }
+  | { type: "particle"; fromAtom: number; toAtom: number; count: number; color: string; duration: number }
+  | { type: "wait"; ms: number }
+  | { type: "clear" }
+  | { type: "nucleus"; x: number; y: number; protons: number; neutrons: number; radius?: number }
+  | { type: "electrons"; atomIndex: number; shells: Array<{ radius: number; count: number; color?: string; orbit?: boolean }> }
+  | { type: "electrons-at"; x: number; y: number; shells: Array<{ radius: number; count: number; color?: string; orbit?: boolean }> }
+  | { type: "orbital"; atomIndex: number; count: number; radius: number; color?: string }
+  | { type: "orbital-at"; x: number; y: number; count: number; radius: number; color?: string }
+  | { type: "text-at"; x: number; y: number; message: string; anchor?: "top" | "bottom" | "left" | "right" }
+  | { type: "grid"; x: number; y: number; cols: number; rows: number; cellW: number; cellH: number; cells: Array<{ label: string; sub?: string; bgColor?: string; textColor?: string; active?: boolean; ringColor?: string }> }
+  | { type: "bar"; x: number; y: number; width: number; totalWidth: number; color: string; label?: string; sub?: string }
+  | { type: "bar-group"; x: number; y: number; items: Array<{ width: number; color: string; label: string }> };
+
+export type LessonStepAnimation = {
+  parts: LessonAnimationPart[];
+  autoAdvanceMs?: number;
+  loop?: boolean;
+  loopMs?: number;
+};
+
+export type LessonStep = {
+  text: string;
+  animation?: LessonStepAnimation;
+  annotations?: ViewportAnnotation[];
+  highlightAtomIds?: string[];
+  highlightBondIds?: string[];
+  autoAdvanceMs?: number;
+};
+
 export type GuidedLesson = {
   id: string;
   title: string;
+  moduleId: string;
+  moduleTitle: string;
   presetId: string;
-  steps: string[];
+  forceView?: "2d" | "3d";
+  prerequisites?: string[];
+  steps: LessonStep[];
   focus: string;
+  quizzes?: QuizQuestion[];
 };
+import type { PeriodicElementCategory, PeriodicElementSymbol } from "./data/periodicTable";

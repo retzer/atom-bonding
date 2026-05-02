@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type PointerEvent } from "react";
-import { Box, Crosshair, HelpCircle, Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { Box, Crosshair, Maximize2, Minimize2, ZoomIn, ZoomOut } from "lucide-react";
 import { atomData } from "../data/atoms";
 import type { AtomParticle, Bond, GraphicsQuality, ProjectionMode, SimulationSettings, SimulationState } from "../types";
 import { detectFunctionalGroups, type FunctionalGroup } from "../simulation/functionalGroups";
@@ -15,7 +15,6 @@ type Props = {
   onResize: (width: number, height: number) => void;
   onSelectAtom: (id: string | null) => void;
   onZoom: (zoom: number) => void;
-  onToggle3D: () => void;
 };
 
 type Vec3 = { x: number; y: number; z: number };
@@ -93,7 +92,6 @@ type WebGLRendererState = {
     pan: WebGLUniformLocation | null;
     depthOffset: WebGLUniformLocation | null;
     vertexPerspective: WebGLUniformLocation | null;
-    aoStrength: WebGLUniformLocation | null;
   };
   sphere: WebGLMesh;
   sphereLow: WebGLMesh;
@@ -126,7 +124,7 @@ const templates: Record<string, Vec3[]> = {
   AX6: [{ x: 1, y: 0, z: 0 }, { x: -1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: -1, z: 0 }, { x: 0, y: 0, z: 1 }, { x: 0, y: 0, z: -1 }]
 };
 
-export function Molecule3DView({ state, settings, running, width, height, onResize, onSelectAtom, onZoom, onToggle3D }: Props) {
+export function Molecule3DView({ state, settings, running, width, height, onResize, onSelectAtom, onZoom }: Props) {
   const webglCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const webglRendererRef = useRef<WebGLRendererState | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -337,27 +335,22 @@ export function Molecule3DView({ state, settings, running, width, height, onResi
         <span>{Math.round(settings.zoom * 100)}%</span>
         <button title="Zoom in" onClick={() => setZoom(settings.zoom + 0.12)}><ZoomIn size={17} /></button>
         <button title="Fit molecule" onClick={fitMolecule}><Crosshair size={17} /></button>
-        <button title="Reset view" onClick={resetCamera}><RotateCcw size={17} /></button>
-        <button title="Switch to 2D view" onClick={onToggle3D}>2D</button>
+        <button title="Reset view" onClick={resetCamera}><Maximize2 size={17} /></button>
         <button title={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
           {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
         </button>
       </div>
-      <div className="camera-tooltip-wrap">
-        <button className="camera-tooltip-btn" tabIndex={0} title="Camera controls">
-          <HelpCircle size={16} />
-        </button>
-        <div className="camera-tooltip">
-          <strong>Camera controls</strong>
-          <span><kbd>Drag</kbd> Rotate</span>
-          <span><kbd>Shift</kbd><kbd>Drag</kbd> Pan</span>
-          <span><kbd>Wheel</kbd> Zoom</span>
-          <span><kbd>Fit</kbd> Frame</span>
-          <span><kbd>Right drag</kbd> Pan</span>
-        </div>
-      </div>
+      <aside className="camera-guide" aria-label="Camera controls guide">
+        <strong>Camera</strong>
+        <span><kbd>Drag</kbd> Rotate</span>
+        <span><kbd>Shift</kbd><kbd>Drag</kbd> Pan</span>
+        <span><kbd>Wheel</kbd> Zoom</span>
+        <span><kbd>Fit</kbd> Frame</span>
+        <span><kbd>Right drag</kbd> Pan</span>
+      </aside>
       <div className="canvas-readout">
         <span><Box size={13} /> VSEPR 3D renderer</span>
+        <span>{projectionLabel(settings.projectionMode)}</span>
         <span>{Math.round(camera.fitZoom * 100)}% fit</span>
         <span>{state.atoms.length} atoms</span>
         <span>{state.bonds.length} bonds</span>
@@ -812,7 +805,6 @@ function renderWebGL3D(
   gl.uniform1f(renderer.locations.maxPerspective, profile.maxPerspective);
   gl.uniform2f(renderer.locations.viewport, width, height);
   gl.uniform2f(renderer.locations.pan, camera.panX, camera.panY);
-  gl.uniform1f(renderer.locations.aoStrength, aoStrengthForQuality(settings.graphicsQuality));
 
   if (settings.visualStyle === "detailed") {
     drawWebGLGroundShadow(renderer, projected, visibleBonds, worldRadii, settings, lighting, budget);
@@ -858,8 +850,7 @@ function createWebGLRenderer(canvas: HTMLCanvasElement, quality: GraphicsQuality
       viewport: gl.getUniformLocation(program, "uViewport"),
       pan: gl.getUniformLocation(program, "uPan"),
       depthOffset: gl.getUniformLocation(program, "uDepthOffset"),
-      vertexPerspective: gl.getUniformLocation(program, "uVertexPerspective"),
-      aoStrength: gl.getUniformLocation(program, "uAoStrength")
+      vertexPerspective: gl.getUniformLocation(program, "uVertexPerspective")
     },
     sphere: createWebGLMesh(gl, createSphereGeometry(profile.sphereRows, profile.sphereColumns)),
     sphereLow: createWebGLMesh(gl, createSphereGeometry(profile.sphereLowRows, profile.sphereLowColumns)),
@@ -882,12 +873,10 @@ function drawWebGLBonds(renderer: WebGLRendererState, atoms: ProjectedAtom[], bo
     if (distance <= 0.01) continue;
     const offsetDir = stablePerpendicular(dir, view);
     const lanes = bond.order === 1 ? [0] : bond.order === 2 ? [-1, 1] : [-1.45, 0, 1.45];
-    const hasHydrogen = a.symbol === "H" || b.symbol === "H";
-    const baseTube = clamp((0.045 - (bond.order - 1) * 0.005) * (hasHydrogen ? 1.22 : 1), 0.032, 0.058);
+    const baseTube = clamp(0.045 - (bond.order - 1) * 0.005, 0.032, 0.052);
     const active = interaction.activeBondIds.has(bond.id) || interaction.hoveredBondId === bond.id;
     const focusAlpha = interaction.focusIds && !interaction.focusIds.has(a.id) && !interaction.focusIds.has(b.id) ? 0.24 : 1;
-    const perspectiveBoost = settings.projectionMode === "deep-perspective" ? 0.003 : settings.projectionMode === "soft-perspective" ? 0.001 : 0;
-    const depthOffset = 0.005 + perspectiveBoost;
+    const depthOffset = 0.008;
     const laneGap = baseTube * (bond.order === 1 ? 0 : bond.order === 2 ? 1.72 : 2.02);
     for (const lane of lanes) {
       const offset = lane * laneGap;
@@ -1243,7 +1232,6 @@ uniform float uDepthOffset;
 uniform float uVertexPerspective;
 varying vec3 vNormal;
 varying vec3 vViewNormal;
-varying float vDepth;
 
 vec3 rotateView(vec3 point) {
   float cosy = cos(uYaw);
@@ -1273,7 +1261,6 @@ void main() {
   gl_Position = vec4(clipX, clipY, depth, 1.0);
   vNormal = normalize(rotateView(normal));
   vViewNormal = vNormal;
-  vDepth = rotated.z;
 }
 `;
 
@@ -1287,31 +1274,22 @@ uniform float uAmbient;
 uniform float uDiffuse;
 uniform float uSpecular;
 uniform float uRim;
-uniform float uAoStrength;
 varying vec3 vNormal;
 varying vec3 vViewNormal;
-varying float vDepth;
 
 void main() {
   vec3 normal = normalize(vNormal);
   vec3 light = normalize(uLightDir);
   vec3 viewNormal = normalize(vViewNormal);
-
-  float depthAO = 1.0 - uAoStrength * clamp(0.5 - vDepth * 0.08, 0.0, 0.5);
-  float cavity = 1.0 - uAoStrength * 0.28 * max(0.0, 1.0 - abs(dot(normal, viewNormal)));
-  float curvature = 1.0 - uAoStrength * 0.12 * max(0.0, -dot(normal, viewNormal));
-  float ao = depthAO * cavity;
-
   float rawDiffuse = max(dot(normal, light), 0.0);
   float wrappedDiffuse = 0.18 + rawDiffuse * 0.82;
   vec3 halfDir = normalize(light + vec3(0.0, 0.12, 1.0));
   float specular = pow(max(dot(normal, halfDir), 0.0), 46.0);
   float broadSpecular = pow(max(dot(normal, halfDir), 0.0), 9.0) * 0.18;
-  float rimPower = 2.45 + (1.0 - uAoStrength) * 1.5;
-  float rim = pow(1.0 - max(dot(viewNormal, vec3(0.0, 0.0, 1.0)), 0.0), rimPower);
+  float rim = pow(1.0 - max(dot(viewNormal, vec3(0.0, 0.0, 1.0)), 0.0), 2.45);
   float terminator = smoothstep(-0.22, 0.54, dot(normal, light));
-  vec3 shadedBase = mix(uColor * (0.58 + uAoStrength * 0.08), uColor * curvature, terminator);
-  vec3 color = shadedBase * (uAmbient * ao + uDiffuse * wrappedDiffuse) + uLightColor * (uSpecular * (specular + broadSpecular) + uRim * rim * ao);
+  vec3 shadedBase = mix(uColor * 0.62, uColor, terminator);
+  vec3 color = shadedBase * (uAmbient + uDiffuse * wrappedDiffuse) + uLightColor * (uSpecular * (specular + broadSpecular) + uRim * rim);
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), uAlpha);
 }
 `;
@@ -1415,13 +1393,6 @@ function graphicsQualityProfile(quality: GraphicsQuality) {
     labelLimit: 72,
     detailMultiplier: 1
   };
-}
-
-function aoStrengthForQuality(quality: GraphicsQuality) {
-  if (quality === "low") return 0;
-  if (quality === "medium") return 0.35;
-  if (quality === "very-high") return 0.75;
-  return 0.55;
 }
 
 function detailLevelFor(settings: SimulationSettings): DetailLevel {
@@ -1777,12 +1748,12 @@ function projectedBounds(atoms: ProjectedAtom[]) {
 
 function projectionProfile(mode: ProjectionMode) {
   if (mode === "orthographic") {
-    return { scale: 0.19, depthBoost: 1, distance: Infinity, minPerspective: 1, maxPerspective: 1, scaleAtomRadius: false };
+    return { scale: 0.19, depthBoost: 0.92, distance: Infinity, minPerspective: 1, maxPerspective: 1, scaleAtomRadius: false };
   }
   if (mode === "deep-perspective") {
-    return { scale: 0.2, depthBoost: 1.55, distance: 5.5, minPerspective: 0.58, maxPerspective: 1.8, scaleAtomRadius: true };
+    return { scale: 0.205, depthBoost: 2.25, distance: 3.35, minPerspective: 0.48, maxPerspective: 2.25, scaleAtomRadius: true };
   }
-  return { scale: 0.185, depthBoost: 1.18, distance: 7.2, minPerspective: 0.72, maxPerspective: 1.38, scaleAtomRadius: true };
+  return { scale: 0.18, depthBoost: 1.38, distance: 6.15, minPerspective: 0.66, maxPerspective: 1.5, scaleAtomRadius: true };
 }
 
 function projectionLabel(mode: ProjectionMode) {
@@ -2234,8 +2205,7 @@ function draw3DBond(ctx: CanvasRenderingContext2D, a: ProjectedAtom, b: Projecte
   const offsets = bond.order === 1 ? [0] : bond.order === 2 ? [-4, 4] : [-6, 0, 6];
   const depthAlpha = clamp(0.46 + ((a.depth + b.depth) / 2 + 2.8) * 0.15, 0.32, 1);
   const avgDepth = (a.depth + b.depth) / 2;
-  const perspectiveLineBoost = settings.projectionMode === "deep-perspective" ? 1.15 : settings.projectionMode === "soft-perspective" ? 1.08 : 1;
-  const lineWidth = clamp((a.screenRadius + b.screenRadius) * 0.075 * (1 + avgDepth * 0.08 + lighting.power * 0.08) * (1 + highlight * 0.2) * perspectiveLineBoost, 2.8, 13);
+  const lineWidth = clamp((a.screenRadius + b.screenRadius) * 0.075 * (1 + avgDepth * 0.08 + lighting.power * 0.08) * (1 + highlight * 0.2), 2.6, 12.4);
   const nearer = a.depth >= b.depth ? a : b;
   const nearT = nearer.id === b.id ? 1 : 0;
   const focusAlpha = interaction.focusIds && !interaction.focusIds.has(a.id) && !interaction.focusIds.has(b.id) ? 0.13 : 1;
@@ -2643,9 +2613,9 @@ function visibleBondSegment(a: ProjectedAtom, b: ProjectedAtom): BondSegment | n
   const uy = dy / length;
   const px = -uy;
   const py = ux;
-  const minVisible = clamp(Math.min(a.screenRadius, b.screenRadius) * 0.18, 5, 14);
-  const nominalStartInset = a.screenRadius * 0.06;
-  const nominalEndInset = b.screenRadius * 0.06;
+  const minVisible = clamp(Math.min(a.screenRadius, b.screenRadius) * 0.28, 7, 18);
+  const nominalStartInset = a.screenRadius * 0.74;
+  const nominalEndInset = b.screenRadius * 0.74;
   const available = length - nominalStartInset - nominalEndInset;
 
   let startInset = nominalStartInset;

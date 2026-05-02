@@ -1,4 +1,4 @@
-import { Activity, BadgeInfo, CircleHelp, ListChecks, Orbit, Zap } from "lucide-react";
+import { BadgeInfo, Orbit, Zap } from "lucide-react";
 import type { CSSProperties } from "react";
 import { atomData } from "../data/atoms";
 import type { AtomParticle, Bond, BondEvent, HydrogenBond, MoleculePreset, SimulationSettings } from "../types";
@@ -23,7 +23,6 @@ export function InfoPanel({ atom, bond, atoms, bonds, hydrogenBonds, molecule, e
   const valence = atom ? valenceStatus(atom, bonds) : null;
   const stretch = bond ? bondStretchStatus(bond, atoms) : atom ? strongestStretchForAtom(atom, bonds, atoms) : null;
   const why = bond ? bondReason(bond, atoms) : latest?.science;
-  const inventory = sceneInventory(atoms, bonds);
   const geometry = atom ? analyzeAtomGeometry(atom, atoms, bonds) : null;
   const resonance = resonanceHint(molecule.length ? molecule : atoms, bonds);
   const moleculeFormula = molecule.length
@@ -112,65 +111,6 @@ export function InfoPanel({ atom, bond, atoms, bonds, hydrogenBonds, molecule, e
           )}
         </div>
       </section>
-
-      <section className="info-card">
-        <div className="section-heading">
-          <ListChecks size={18} />
-          <h2>Scene Composition</h2>
-        </div>
-        {inventory.groups.length ? (
-          <>
-            <div className="composition-list">
-              {inventory.groups.map((group) => (
-                <article key={group.key}>
-                  <strong>{group.formula}</strong>
-                  <span>{group.quantity} {group.atomCount === 1 ? "atom" : "molecule"}{group.quantity > 1 ? "s" : ""} - {group.atomCount} atoms - {group.bondCount} bonds</span>
-                  <p>{group.elements}</p>
-                </article>
-              ))}
-            </div>
-            <p className="composition-total">{inventory.totalAtoms} atoms total - {inventory.totalBonds} bonds total - {inventory.elements}</p>
-          </>
-        ) : (
-          <p className="muted">No compositions yet. Build a molecule, choose a preset, or spawn atoms.</p>
-        )}
-      </section>
-
-      <section className="info-card">
-        <div className="section-heading">
-          <Activity size={18} />
-          <h2>Recent Events</h2>
-        </div>
-        <div className="event-list">
-          {events.length ? events.slice(0, 4).map((event) => (
-            <article key={event.id}>
-              <strong>{event.title}</strong>
-              <p>{event.plain}</p>
-            </article>
-          )) : <p className="muted">No bond event yet. Spawn atoms in Free Simulation or choose a preset molecule.</p>}
-        </div>
-      </section>
-
-      <section className="info-card legend-card">
-        <div className="section-heading">
-          <CircleHelp size={18} />
-          <h2>Legend</h2>
-        </div>
-        <div className="legend-grid">
-          <span><i className="legend-electron" />Valence electron</span>
-          <span><i className="legend-covalent" />Covalent sharing</span>
-          <span><i className="legend-ionic" />Ionic transfer</span>
-          <span><i className="legend-polar" />Partial charge</span>
-          <span><i className="legend-metal" />Electron sea</span>
-          <span><i className="legend-hbond" />Hydrogen bond</span>
-          <span><i className="legend-shell" />Electron shell</span>
-        </div>
-      </section>
-
-      <section className="info-card compact">
-        <h2>Geometry Forces</h2>
-        <p>{settings.geometryAssist ? settings.geometryMode === "rigid" ? `Rigid mode keeps the structure close to textbook VSEPR geometry with minimal thermal drift${settings.geometry3D ? ". The 3D view prioritizes ideal bond angles and central-atom geometry." : "."}` : `Flexible mode keeps VSEPR guidance active while allowing exploratory motion, spacing, and gentle distortion${settings.geometry3D ? ". The 3D view blends textbook geometry with the live simulation." : "."}` : "Geometry assist is off. Atoms still bond and collide, but VSEPR angle guidance is paused."}</p>
-      </section>
     </aside>
   );
 }
@@ -185,85 +125,12 @@ function valenceStatus(atom: AtomParticle, bonds: Bond[]) {
   return { fill, target, percent: target ? (fill / target) * 100 : 100, complete: fill >= target };
 }
 
-function sceneInventory(atoms: AtomParticle[], bonds: Bond[]) {
-  const structuralBonds = bonds.filter((bond) => bond.kind !== "hydrogen" && bond.kind !== "dispersion");
-  const adjacency = new Map<string, Set<string>>();
-  for (const atom of atoms) adjacency.set(atom.id, new Set());
-  for (const bond of structuralBonds) {
-    adjacency.get(bond.a)?.add(bond.b);
-    adjacency.get(bond.b)?.add(bond.a);
-  }
-
-  const seen = new Set<string>();
-  const components: AtomParticle[][] = [];
-  for (const atom of atoms) {
-    if (seen.has(atom.id)) continue;
-    const stack = [atom.id];
-    const ids = new Set<string>();
-    seen.add(atom.id);
-    while (stack.length) {
-      const id = stack.pop()!;
-      ids.add(id);
-      for (const next of adjacency.get(id) ?? []) {
-        if (seen.has(next)) continue;
-        seen.add(next);
-        stack.push(next);
-      }
-    }
-    components.push(atoms.filter((item) => ids.has(item.id)));
-  }
-
-  const grouped = new Map<string, {
-    key: string;
-    formula: string;
-    quantity: number;
-    atomCount: number;
-    bondCount: number;
-    elements: string;
-  }>();
-
-  for (const component of components) {
-    const ids = new Set(component.map((atom) => atom.id));
-    const bondCount = structuralBonds.filter((bond) => ids.has(bond.a) && ids.has(bond.b)).length;
-    const formula = formulaFromAtoms(component);
-    const key = `${formula}-${component.length}-${bondCount}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.quantity += 1;
-    } else {
-      grouped.set(key, {
-        key,
-        formula,
-        quantity: 1,
-        atomCount: component.length,
-        bondCount,
-        elements: elementSummary(component)
-      });
-    }
-  }
-
-  return {
-    groups: [...grouped.values()].sort((a, b) => b.atomCount - a.atomCount || a.formula.localeCompare(b.formula)),
-    totalAtoms: atoms.length,
-    totalBonds: structuralBonds.length,
-    elements: elementSummary(atoms)
-  };
-}
-
 function formulaFromAtoms(atoms: AtomParticle[]) {
   const counts = atoms.reduce<Record<string, number>>((acc, item) => {
     acc[item.symbol] = (acc[item.symbol] ?? 0) + 1;
     return acc;
   }, {});
   return formatCounts(counts, true);
-}
-
-function elementSummary(atoms: AtomParticle[]) {
-  const counts = atoms.reduce<Record<string, number>>((acc, item) => {
-    acc[item.symbol] = (acc[item.symbol] ?? 0) + 1;
-    return acc;
-  }, {});
-  return formatCounts(counts, false).replace(/([A-Z][a-z]?)(\d+)/g, "$1 x $2").replace(/([A-Z][a-z]?)(?=$|,)/g, "$1 x 1");
 }
 
 function formatCounts(counts: Record<string, number>, hillOrder: boolean) {

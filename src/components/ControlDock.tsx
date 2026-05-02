@@ -1,19 +1,29 @@
-import { Box, Eye, EyeOff, Focus, Gauge, Lightbulb, MousePointer2, Orbit, Palette, Plus, Share2, SlidersHorizontal, Sparkles, Tags, Waves, Zap, ZoomIn } from "lucide-react";
+import { useState } from "react";
+import type { ReactNode } from "react";
+import { Activity, ChevronDown, CircleHelp, ListChecks, Orbit, Share2, SlidersHorizontal, Waves } from "lucide-react";
 import type { CSSProperties } from "react";
-import { atomData, elementGroups } from "../data/atoms";
-import type { AtomSymbol, SimulationSettings } from "../types";
+import { atomData } from "../data/atoms";
+import type { AtomParticle, AtomSymbol, Bond, BondEvent, HydrogenBond, MoleculePreset, SimulationSettings } from "../types";
 
 type Props = {
   settings: SimulationSettings;
+  atoms: AtomParticle[];
+  bonds: Bond[];
+  hydrogenBonds: HydrogenBond[];
+  events: BondEvent[];
+  activePreset: MoleculePreset | null;
   onSetting: <K extends keyof SimulationSettings>(key: K, value: SimulationSettings[K]) => void;
-  onSpawnAtoms: () => void;
+  onSpawnAtom: (symbol: AtomSymbol) => void;
   onShareScene: () => void;
 };
 
-export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }: Props) {
+export function ControlDock({ settings, atoms, bonds, hydrogenBonds, events, activePreset, onSetting, onSpawnAtom, onShareScene }: Props) {
   const selectElement = (symbol: AtomSymbol) => {
     onSetting("selectedElements", [symbol]);
+    onSpawnAtom(symbol);
   };
+
+  const inventory = sceneInventory(atoms, bonds);
 
   return (
     <section className="control-dock" aria-label="Simulation controls">
@@ -44,183 +54,110 @@ export function ControlDock({ settings, onSetting, onSpawnAtoms, onShareScene }:
       </div>
       <div className="control-section">
         <div className="control-section-title">Elements</div>
-        <div className="element-board" aria-label="Choose an atom type by group">
-          {elementGroups.map((group) => (
-            <div className="element-group" key={group.id}>
-              <div className="element-group-title">{group.label}</div>
-              <div className="element-picker">
-                {group.symbols.map((symbol) => {
-                  const atom = atomData[symbol];
-                  return (
-                    <button
-                      key={atom.symbol}
-                      className={settings.selectedElements.includes(atom.symbol) ? "selected" : ""}
-                      style={{ "--atom-color": atom.color } as CSSProperties}
-                      title={`${atom.name}: ${atom.behavior}`}
-                      onClick={() => selectElement(atom.symbol)}
-                    >
-                      {atom.symbol}
-                    </button>
-                  );
-                })}
-              </div>
+        <div className="element-board quick-element-board" aria-label="Choose a common atom">
+          <div className="element-group quick-elements">
+            <div className="element-group-title">Common starters</div>
+            <div className="element-picker">
+              {quickElementSymbols.map((symbol) => {
+                const atom = atomData[symbol];
+                return (
+                  <button
+                    key={atom.symbol}
+                    className={settings.selectedElements.includes(atom.symbol) ? "selected" : ""}
+                    style={{ "--atom-color": atom.color } as CSSProperties}
+                    title={`${atom.name}: ${atom.behavior}`}
+                    onClick={() => selectElement(atom.symbol)}
+                  >
+                    {atom.symbol}
+                  </button>
+                );
+              })}
             </div>
-          ))}
+            <p className="element-group-hint">Open the full periodic table under the simulator for all 118 elements.</p>
+          </div>
         </div>
       </div>
       <div className="control-section control-section-inline">
         <div className="spawn-row">
-          <button className="spawn-button primary" title="Add one selected atom to the free simulation" onClick={onSpawnAtoms}>
-            <Plus size={16} />
-            Spawn one atom
-          </button>
           <button className="spawn-button" title="Copy a shareable link for the current scene" onClick={onShareScene}>
             <Share2 size={16} />
             Share scene
           </button>
         </div>
-        <div className="visual-row" aria-label="Visual model">
-          <button className={settings.visualStyle === "detailed" ? "visual-choice active" : "visual-choice"} title="Detailed model with shaded atoms and glow effects" onClick={() => onSetting("visualStyle", "detailed")}>
-            <Sparkles size={16} />
-            Glow
-          </button>
-          <button className={settings.visualStyle === "simple-neutral" ? "visual-choice active" : "visual-choice"} title="Simplified model with flat neutral atoms and no glow" onClick={() => onSetting("visualStyle", "simple-neutral")}>
-            Simple
-          </button>
-          <button className={settings.visualStyle === "simple-colored" ? "visual-choice active" : "visual-choice"} title="Simplified model with flat element colors and no glow" onClick={() => onSetting("visualStyle", "simple-colored")}>
-            <Palette size={16} />
-            Color
-          </button>
-        </div>
-        <div className="projection-row" aria-label="Graphics quality">
-          {(["low", "medium", "high", "very-high"] as const).map((quality) => (
-            <button
-              key={quality}
-              className={settings.graphicsQuality === quality ? "visual-choice active" : "visual-choice"}
-              title={`Use ${quality.replace("-", " ")} graphics quality`}
-              onClick={() => onSetting("graphicsQuality", quality)}
-            >
-              <Gauge size={15} />
-              {quality === "very-high" ? "Very high" : quality[0].toUpperCase() + quality.slice(1)}
-            </button>
-          ))}
-        </div>
-        <div className="projection-row" aria-label="Analysis mode">
-          <button className={settings.analysisMode === "structure" ? "visual-choice active" : "visual-choice"} title="Clean structural view with zoom-based abstraction" onClick={() => onSetting("analysisMode", "structure")}>
-            <Box size={15} />
-            Structure
-          </button>
-          <button className={settings.analysisMode === "chemistry" ? "visual-choice active" : "visual-choice"} title="Full chemistry view with charges, dipoles, regions, and electron detail" onClick={() => onSetting("analysisMode", "chemistry")}>
-            <Lightbulb size={15} />
-            Chemistry
-          </button>
-        </div>
-        <div className="projection-row" aria-label="Structure detail">
-          {(["full", "simplified", "skeleton"] as const).map((mode) => (
-            <button key={mode} className={settings.displayMode === mode ? "visual-choice active" : "visual-choice"} title={`Use ${mode} structure display`} onClick={() => onSetting("displayMode", mode)}>
-              {mode[0].toUpperCase() + mode.slice(1)}
-            </button>
-          ))}
-        </div>
       </div>
-      {settings.geometry3D && (
-        <div className="control-section">
-          <div className="control-section-title">3D View</div>
-          <div className="projection-row" aria-label="3D projection">
-            <button className={settings.projectionMode === "orthographic" ? "visual-choice active" : "visual-choice"} title="Flatten depth for a clean structural comparison" onClick={() => onSetting("projectionMode", "orthographic")}>
-              Ortho
-            </button>
-            <button className={settings.projectionMode === "soft-perspective" ? "visual-choice active" : "visual-choice"} title="Use gentle perspective depth for stable 3D viewing" onClick={() => onSetting("projectionMode", "soft-perspective")}>
-              Soft
-            </button>
-            <button className={settings.projectionMode === "deep-perspective" ? "visual-choice active" : "visual-choice"} title="Use stronger perspective for clearer front-to-back depth" onClick={() => onSetting("projectionMode", "deep-perspective")}>
-              Deep
-            </button>
-          </div>
-          <div className="projection-row" aria-label="3D camera presets">
-            {(["free", "isometric", "top", "side"] as const).map((preset) => (
-              <button key={preset} className={settings.cameraPreset === preset ? "visual-choice active" : "visual-choice"} title={`Use ${preset} camera view`} onClick={() => onSetting("cameraPreset", preset)}>
-                <MousePointer2 size={15} />
-                {preset[0].toUpperCase() + preset.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div className="control-grid lighting-grid" aria-label="Lighting controls">
-            <Slider label="Light yaw" title="Move the light around the molecule horizontally." value={settings.lightYaw} min={-80} max={80} step={1} onChange={(value) => onSetting("lightYaw", value)} />
-            <Slider label="Light pitch" title="Raise or lower the light above the molecule." value={settings.lightPitch} min={20} max={78} step={1} onChange={(value) => onSetting("lightPitch", value)} />
-            <Slider label="Light power" title="Change the strength of directional lighting." value={settings.lightIntensity} min={0.25} max={1.8} step={0.05} onChange={(value) => onSetting("lightIntensity", value)} />
-            <label className="slider color-slider" title="Change the color of the directional light.">
-              <span>
-                Light color
-                <strong>{settings.lightColor}</strong>
-              </span>
-              <input type="color" value={settings.lightColor} onChange={(event) => onSetting("lightColor", event.target.value)} />
-            </label>
-          </div>
+
+      <CollapsibleSection icon={<ListChecks size={18} />} title="Scene Composition" defaultOpen={false}>
+        {inventory.groups.length ? (
+          <>
+            <div className="composition-list">
+              {inventory.groups.map((group) => (
+                <article key={group.key}>
+                  <strong>{group.formula}</strong>
+                  <span>{group.quantity} {group.atomCount === 1 ? "atom" : "molecule"}{group.quantity > 1 ? "s" : ""} - {group.atomCount} atoms - {group.bondCount} bonds</span>
+                  <p>{group.elements}</p>
+                </article>
+              ))}
+            </div>
+            <p className="composition-total">{inventory.totalAtoms} atoms total - {inventory.totalBonds} bonds total - {inventory.elements}</p>
+          </>
+        ) : (
+          <p className="muted">No compositions yet. Click an element to add atoms, or choose a preset molecule.</p>
+        )}
+      </CollapsibleSection>
+
+      <CollapsibleSection icon={<Activity size={18} />} title="Recent Events" defaultOpen={false}>
+        <div className="event-list">
+          {events.length ? events.slice(0, 4).map((event) => (
+            <article key={event.id}>
+              <strong>{event.title}</strong>
+              <p>{event.plain}</p>
+            </article>
+          )) : <p className="muted">No bond event yet. Spawn atoms in Free Simulation or choose a preset molecule.</p>}
         </div>
-      )}
-      <div className="control-section">
-        <div className="control-section-title">Overlays</div>
-      <div className="toggle-row">
-        <button className={settings.showShells ? "toggle active" : "toggle"} title="Show or hide electron shells" onClick={() => onSetting("showShells", !settings.showShells)}>
-          {settings.showShells ? <Eye size={16} /> : <EyeOff size={16} />}
-          Shells
-        </button>
-        <button className={settings.showLabels ? "toggle active" : "toggle"} title="Show or hide atom names" onClick={() => onSetting("showLabels", !settings.showLabels)}>
-          {settings.showLabels ? <Eye size={16} /> : <EyeOff size={16} />}
-          Labels
-        </button>
-        <button className={settings.advanced ? "toggle active" : "toggle"} title="Switch between plain and deeper explanation text" onClick={() => onSetting("advanced", !settings.advanced)}>
-          <Gauge size={16} />
-          Advanced
-        </button>
-        <button className={settings.showElectronRegions ? "toggle active" : "toggle"} title="Show VSEPR electron regions around bonded atoms" onClick={() => onSetting("showElectronRegions", !settings.showElectronRegions)}>
-          <Waves size={16} />
-          Regions
-        </button>
-        <button className={settings.highlightLonePairs ? "toggle active" : "toggle"} title="Highlight lone electron pairs and their repulsion regions" onClick={() => onSetting("highlightLonePairs", !settings.highlightLonePairs)}>
-          <Lightbulb size={16} />
-          Lone pairs
-        </button>
-        <button className={settings.showBondDipoles ? "toggle active" : "toggle"} title="Show bond dipole arrows" onClick={() => onSetting("showBondDipoles", !settings.showBondDipoles)}>
-          <Zap size={16} />
-          Bond dipoles
-        </button>
-        <button className={settings.showNetDipole ? "toggle active" : "toggle"} title="Show the overall molecular dipole" onClick={() => onSetting("showNetDipole", !settings.showNetDipole)}>
-          <Zap size={16} />
-          Net dipole
-        </button>
-        <button className={settings.showCharges ? "toggle active" : "toggle"} title="Show partial and formal charge labels" onClick={() => onSetting("showCharges", !settings.showCharges)}>
-          <Tags size={16} />
-          Charges
-        </button>
-        <button className={settings.showFunctionalGroups ? "toggle active" : "toggle"} title="Highlight OH, amine, carbonyl, and aromatic-like regions" onClick={() => onSetting("showFunctionalGroups", !settings.showFunctionalGroups)}>
-          <Tags size={16} />
-          Groups
-        </button>
-        <button className={settings.focusMode ? "toggle active" : "toggle"} title="Fade distant atoms and emphasize the selected atom neighborhood" onClick={() => onSetting("focusMode", !settings.focusMode)}>
-          <Focus size={16} />
-          Focus
-        </button>
-        <button className={settings.showElectronFlow ? "toggle active" : "toggle"} title="Animate electron density moving along bonds" onClick={() => onSetting("showElectronFlow", !settings.showElectronFlow)}>
-          <Sparkles size={16} />
-          Flow
-        </button>
-        <button className={settings.geometryAssist ? "toggle active" : "toggle"} title="Use VSEPR angle targets and relaxation forces to settle molecule shapes" onClick={() => onSetting("geometryAssist", !settings.geometryAssist)}>
-          <Orbit size={16} />
-          Geometry
-        </button>
-        <button className={settings.geometry3D ? "toggle active" : "toggle"} title="Project VSEPR geometry with depth for tetrahedral and other 3D shapes" onClick={() => onSetting("geometry3D", !settings.geometry3D)}>
-          <Box size={16} />
-          3D
-        </button>
-        <button className="toggle" title="Reset zoom to the default view" onClick={() => onSetting("zoom", 1)}>
-          <ZoomIn size={16} />
-          100%
-        </button>
-      </div>
-      </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection icon={<CircleHelp size={18} />} title="Legend" defaultOpen={false}>
+        <div className="legend-grid">
+          <span><i className="legend-electron" />Valence electron</span>
+          <span><i className="legend-covalent" />Covalent sharing</span>
+          <span><i className="legend-ionic" />Ionic transfer</span>
+          <span><i className="legend-polar" />Partial charge</span>
+          <span><i className="legend-metal" />Electron sea</span>
+          <span><i className="legend-hbond" />Hydrogen bond</span>
+          <span><i className="legend-shell" />Electron shell</span>
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Geometry Forces" icon={null} defaultOpen={false}>
+        <p>{settings.geometryAssist ? settings.geometryMode === "rigid" ? `Rigid mode keeps the structure close to textbook VSEPR geometry with minimal thermal drift${settings.geometry3D ? ". The 3D view prioritizes ideal bond angles and central-atom geometry." : "."}` : `Flexible mode keeps VSEPR guidance active while allowing exploratory motion, spacing, and gentle distortion${settings.geometry3D ? ". The 3D view blends textbook geometry with the live simulation." : "."}` : "Geometry assist is off. Atoms still bond and collide, but VSEPR angle guidance is paused."}</p>
+      </CollapsibleSection>
     </section>
+  );
+}
+
+const quickElementSymbols: AtomSymbol[] = [
+  "H", "C", "N", "O", "F", "Na", "Mg", "Al", "Si", "P", "S", "Cl",
+  "K", "Ca", "Fe", "Cu", "Zn", "Br", "Ag", "I", "Au", "Hg", "Pb"
+];
+
+function CollapsibleSection({ icon, title, defaultOpen, children }: {
+  icon: ReactNode | null;
+  title: string;
+  defaultOpen: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={`control-section collapsible-section${open ? " expanded" : ""}`}>
+      <button className="collapsible-header" onClick={() => setOpen((prev) => !prev)}>
+        <span className="collapsible-header-left">
+          {icon}
+          <span className="control-section-title">{title}</span>
+        </span>
+        <ChevronDown size={16} className={`collapsible-chevron${open ? " rotated" : ""}`} />
+      </button>
+      {open && <div className="collapsible-body">{children}</div>}
+    </div>
   );
 }
 
@@ -242,4 +179,98 @@ function Slider({ label, title, value, min, max, step, onChange }: {
       <input type="range" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
   );
+}
+
+function sceneInventory(atoms: AtomParticle[], bonds: Bond[]) {
+  const structuralBonds = bonds.filter((bond) => bond.kind !== "hydrogen" && bond.kind !== "dispersion");
+  const adjacency = new Map<string, Set<string>>();
+  for (const atom of atoms) adjacency.set(atom.id, new Set());
+  for (const bond of structuralBonds) {
+    adjacency.get(bond.a)?.add(bond.b);
+    adjacency.get(bond.b)?.add(bond.a);
+  }
+
+  const seen = new Set<string>();
+  const components: AtomParticle[][] = [];
+  for (const atom of atoms) {
+    if (seen.has(atom.id)) continue;
+    const stack = [atom.id];
+    const ids = new Set<string>();
+    seen.add(atom.id);
+    while (stack.length) {
+      const id = stack.pop()!;
+      ids.add(id);
+      for (const next of adjacency.get(id) ?? []) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        stack.push(next);
+      }
+    }
+    components.push(atoms.filter((item) => ids.has(item.id)));
+  }
+
+  const grouped = new Map<string, {
+    key: string;
+    formula: string;
+    quantity: number;
+    atomCount: number;
+    bondCount: number;
+    elements: string;
+  }>();
+
+  for (const component of components) {
+    const ids = new Set(component.map((atom) => atom.id));
+    const bondCount = structuralBonds.filter((bond) => ids.has(bond.a) && ids.has(bond.b)).length;
+    const formula = formulaFromAtoms(component);
+    const key = `${formula}-${component.length}-${bondCount}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      grouped.set(key, {
+        key,
+        formula,
+        quantity: 1,
+        atomCount: component.length,
+        bondCount,
+        elements: elementSummary(component)
+      });
+    }
+  }
+
+  return {
+    groups: [...grouped.values()].sort((a, b) => b.atomCount - a.atomCount || a.formula.localeCompare(b.formula)),
+    totalAtoms: atoms.length,
+    totalBonds: structuralBonds.length,
+    elements: elementSummary(atoms)
+  };
+}
+
+function formulaFromAtoms(atoms: AtomParticle[]) {
+  const counts = atoms.reduce<Record<string, number>>((acc, item) => {
+    acc[item.symbol] = (acc[item.symbol] ?? 0) + 1;
+    return acc;
+  }, {});
+  return formatCounts(counts, true);
+}
+
+function elementSummary(atoms: AtomParticle[]) {
+  const counts = atoms.reduce<Record<string, number>>((acc, item) => {
+    acc[item.symbol] = (acc[item.symbol] ?? 0) + 1;
+    return acc;
+  }, {});
+  return formatCounts(counts, false).replace(/([A-Z][a-z]?)(\d+)/g, "$1 x $2").replace(/([A-Z][a-z]?)(?=$|,)/g, "$1 x 1");
+}
+
+function formatCounts(counts: Record<string, number>, hillOrder: boolean) {
+  const symbols = Object.keys(counts).sort((a, b) => {
+    if (hillOrder && counts.C) {
+      if (a === "C") return -1;
+      if (b === "C") return 1;
+      if (a === "H") return -1;
+      if (b === "H") return 1;
+    }
+    return (atomData[a as keyof typeof atomData]?.atomicNumber ?? 999) - (atomData[b as keyof typeof atomData]?.atomicNumber ?? 999);
+  });
+  return symbols.map((symbol) => `${symbol}${counts[symbol] > 1 ? counts[symbol] : ""}`).join(hillOrder ? "" : ", ");
 }

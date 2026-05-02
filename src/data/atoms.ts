@@ -1,6 +1,7 @@
 import type { AtomDefinition, AtomSymbol, ElementGroup } from "../types";
+import { periodicElementGroups, periodicElements } from "./periodicTable";
 
-export const atomData: Record<AtomSymbol, AtomDefinition> = {
+const curatedAtomData: Partial<Record<AtomSymbol, AtomDefinition>> = {
   H: {
     symbol: "H",
     name: "Hydrogen",
@@ -898,14 +899,70 @@ export const atomData: Record<AtomSymbol, AtomDefinition> = {
   }
 };
 
-export const atomOptions = Object.values(atomData);
+const categoryBehavior: Record<ElementGroup, string> = {
+  "core-nonmetals": "Reactive nonmetal behavior is simplified as covalent sharing unless electronegativity strongly favors ion formation.",
+  halogens: "Halogens usually seek one more electron and often form one bond or a negative ion.",
+  "alkali-metals": "Alkali metals readily lose one valence electron and often form positive ions.",
+  "alkaline-earth-metals": "Alkaline earth metals commonly lose two valence electrons and form 2+ ions.",
+  metalloids: "Metalloids often bridge metallic and covalent behavior in simplified bonding examples.",
+  "post-transition-metals": "Post-transition metals are treated as metals with common ionic or coordination tendencies.",
+  "transition-metals": "Transition metals can use variable oxidation states and are simplified as flexible metallic or coordination centers.",
+  lanthanides: "Lanthanides are modeled as reactive metals with flexible coordination behavior.",
+  actinides: "Actinides are modeled as heavy metals with flexible coordination behavior.",
+  "noble-gases": "Noble gases have filled outer shells and are treated as nonbonding in ordinary conditions."
+};
 
-export const elementGroups: Array<{ id: ElementGroup; label: string; symbols: AtomSymbol[] }> = [
-  { id: "core-nonmetals", label: "Core nonmetals", symbols: ["H", "C", "N", "O", "P", "S", "Se"] },
-  { id: "halogens", label: "Halogens", symbols: ["F", "Cl", "Br", "I"] },
-  { id: "alkali-metals", label: "Alkali metals", symbols: ["Li", "Na", "K", "Rb", "Cs"] },
-  { id: "alkaline-earth-metals", label: "Alkaline earths", symbols: ["Be", "Mg", "Ca", "Sr", "Ba"] },
-  { id: "metalloids", label: "Metalloids and post-transition", symbols: ["B", "Al", "Si", "Ga", "Ge", "As", "Sn", "Sb", "Te", "Pb", "Bi"] },
-  { id: "transition-metals", label: "Transition metals", symbols: ["Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Y", "Zr", "Mo", "Pd", "Ag", "Cd", "W", "Pt", "Au", "Hg"] },
-  { id: "noble-gases", label: "Noble gases", symbols: ["He", "Ne", "Ar", "Kr", "Xe"] }
-];
+const metalGroups = new Set<ElementGroup>([
+  "alkali-metals",
+  "alkaline-earth-metals",
+  "post-transition-metals",
+  "transition-metals",
+  "lanthanides",
+  "actinides"
+]);
+
+function typicalBondCount(group: ElementGroup, valenceElectrons: number) {
+  if (group === "noble-gases") return 0;
+  if (group === "halogens") return 1;
+  if (group === "alkali-metals") return 1;
+  if (group === "alkaline-earth-metals") return 2;
+  if (group === "transition-metals" || group === "lanthanides" || group === "actinides") return Math.min(Math.max(valenceElectrons || 2, 2), 6);
+  if (group === "post-transition-metals") return Math.min(Math.max(valenceElectrons || 2, 2), 4);
+  if (valenceElectrons <= 4) return Math.max(valenceElectrons, 1);
+  return Math.max(8 - valenceElectrons, 1);
+}
+
+function fallbackAtomDefinition(element: (typeof periodicElements)[number]): AtomDefinition {
+  const group = element.category as ElementGroup;
+  const typicalBonds = typicalBondCount(group, element.valenceElectrons);
+  const metal = metalGroups.has(group);
+  return {
+    symbol: element.symbol,
+    name: element.name,
+    atomicNumber: element.atomicNumber,
+    valenceElectrons: element.valenceElectrons,
+    electronegativity: element.electronegativity ?? 0,
+    covalentRadius: Math.round((element.atomicRadius ?? 145) * 0.68),
+    shellSummary: element.electronConfiguration,
+    typicalBonds,
+    maxBonds: group === "transition-metals" || group === "lanthanides" || group === "actinides" ? Math.max(typicalBonds, 6) : typicalBonds,
+    color: element.cpkHexColor ?? element.color,
+    glow: element.color,
+    behavior: categoryBehavior[group],
+    group,
+    metal,
+    nobleGas: group === "noble-gases"
+  };
+}
+
+export const atomData = Object.fromEntries(
+  periodicElements.map((element) => [element.symbol, curatedAtomData[element.symbol] ?? fallbackAtomDefinition(element)])
+) as Record<AtomSymbol, AtomDefinition>;
+
+export const atomOptions = Object.values(atomData).sort((a, b) => a.atomicNumber - b.atomicNumber);
+
+export const elementGroups: Array<{ id: ElementGroup; label: string; symbols: AtomSymbol[] }> = periodicElementGroups.map((group) => ({
+  id: group.id,
+  label: group.label,
+  symbols: [...group.symbols]
+}));

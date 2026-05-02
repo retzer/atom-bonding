@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { atomData } from "../data/atoms";
 import { moleculePresets, presetById } from "../data/presets";
-import type { AppMode, AtomParticle, Bond, BondEvent, MoleculePreset, SimulationSettings, SimulationState } from "../types";
-import { classifyBond } from "../simulation/chemistry";
-import { createFreeState, createPresetState, createSpawnedAtoms, stepSimulation } from "../simulation/engine";
+import type { AppMode, AtomParticle, AtomSymbol, Bond, BondEvent, ElectronEffect, LessonAnimationPart, LessonStep, MoleculePreset, SimulationSettings, SimulationState, ViewportAnnotation } from "../types";
+import { classifyBond, eventForBond, makeBond } from "../simulation/chemistry";
+import { createAtom, createFreeState, createPresetState, createSpawnedAtoms, stepSimulation } from "../simulation/engine";
 
 const defaultSize = { width: 920, height: 640 };
 type GlucoseAnomer = "alpha" | "beta";
 type GlucoseStage = "idle" | "aldehyde" | "hemiacetal" | "ring";
+
+const lessonSceneOffset = (width: number, height: number) => ({
+  x: Math.max(0, (width - 920) / 2),
+  y: (height * 0.5) - 300
+});
 
 export const defaultSettings: SimulationSettings = {
   temperature: 0.78,
@@ -16,11 +21,11 @@ export const defaultSettings: SimulationSettings = {
   collisionStrength: 0.72,
   electronegativityEmphasis: 1,
   bondingDistance: 2.05,
-  zoom: 1,
+   zoom: 1.4,
   theme: "light",
   visualStyle: "detailed",
   graphicsQuality: "high",
-  projectionMode: "soft-perspective",
+   projectionMode: "orthographic",
   cameraPreset: "free",
   lightYaw: -42,
   lightPitch: 48,
@@ -39,9 +44,9 @@ export const defaultSettings: SimulationSettings = {
   showElectronFlow: true,
   highlightLonePairs: true,
   geometryAssist: true,
-  geometry3D: false,
-  geometryMode: "flexible",
-  relaxationStrength: 0.74,
+   geometry3D: false,
+   geometryMode: "rigid",
+   relaxationStrength: 1.2,
   advanced: false,
   selectedElements: ["C"]
 };
@@ -54,6 +59,15 @@ export function useSimulation() {
   const [activePreset, setActivePreset] = useState<MoleculePreset | null>(null);
   const [glucoseAnomer, setGlucoseAnomer] = useState<GlucoseAnomer>("beta");
   const [glucoseStage, setGlucoseStage] = useState<GlucoseStage>("idle");
+  const [lessonAnnotations, setLessonAnnotations] = useState<ViewportAnnotation[]>([]);
+  const [highlightedAtomIds, setHighlightedAtomIds] = useState<string[]>([]);
+  const [highlightedBondIds, setHighlightedBondIds] = useState<string[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [lessonStepText, setLessonStepText] = useState<string | undefined>(undefined);
+  const [lessonStepIndex, setLessonStepIndex] = useState<number>(0);
+  const [lessonTotalSteps, setLessonTotalSteps] = useState<number>(0);
+  const [animParts, setAnimParts] = useState<LessonAnimationPart[]>([]);
+  const [revealedCount, setRevealedCount] = useState(0);
   const [state, setState] = useState<SimulationState>(() => createFreeState(defaultSize.width, defaultSize.height, defaultSettings));
   const frame = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
@@ -104,14 +118,56 @@ export function useSimulation() {
     setIsRunning(true);
   }, [clearGlucoseStageTimers, settings, size.height, size.width]);
 
+  const spawnAtom = useCallback((symbol: AtomSymbol) => {
+    const nextSettings = { ...settings, selectedElements: [symbol] };
+    const spawned = createSpawnedAtoms(size.width, size.height, nextSettings, 1);
+    clearGlucoseStageTimers();
+    setSettings((current) => ({ ...current, selectedElements: [symbol] }));
+    setMode("free");
+    setActivePreset(null);
+    setGlucoseStage("idle");
+    setLessonAnnotations([]);
+    setHighlightedAtomIds([]);
+    setHighlightedBondIds([]);
+    setLessonStepText(undefined);
+    setAnimParts([]);
+    setState((current) => {
+      const base = current.metallicLattice ? createFreeState(size.width, size.height, nextSettings) : current;
+      return {
+        ...base,
+        atoms: [...base.atoms, ...spawned],
+        bonds: base.metallicLattice ? [] : base.bonds,
+        hydrogenBonds: [],
+        effects: base.metallicLattice ? [] : base.effects,
+        metallicElectrons: [],
+        selectedAtomId: spawned[0]?.id ?? base.selectedAtomId,
+        selectedBondId: null,
+        metallicLattice: false,
+        events: [{
+          id: `spawn-${symbol}-${Date.now()}`,
+          time: base.time,
+          title: `${atomData[symbol].name} atom added`,
+          plain: `${atomData[symbol].name} was added to the free simulation space.`,
+          science: "The atom now follows the live collision, valence, and electronegativity rules."
+        }, ...base.events].slice(0, 8)
+      };
+    });
+    setIsRunning(true);
+  }, [clearGlucoseStageTimers, settings, size.height, size.width]);
+
   const loadPreset = useCallback((presetId: string, nextMode: AppMode = "presets") => {
     const preset = presetById[presetId] ?? moleculePresets[0];
     clearGlucoseStageTimers();
+    clearLessonAtoms();
     setMode(nextMode);
     setActivePreset(preset);
     setGlucoseStage(preset.id === "glucose-linear" ? "aldehyde" : isGlucoseRingPreset(preset.id) ? "ring" : "idle");
     if (isGlucoseRingPreset(preset.id)) setGlucoseAnomer(preset.id === "glucose-alpha" ? "alpha" : "beta");
-    setState(createPresetState(size.width, size.height, preset));
+    if (nextMode === "guided") {
+      setState(createFreeState(size.width, size.height, settings));
+    } else {
+      setState(createPresetState(size.width, size.height, preset));
+    }
     setIsRunning(true);
   }, [clearGlucoseStageTimers, size.height, size.width]);
 
@@ -282,7 +338,13 @@ export function useSimulation() {
     setMode("presets");
     setGlucoseAnomer(anomer);
     setGlucoseStage("aldehyde");
-    setSettings((current) => ({ ...current, geometryAssist: true }));
+    setSettings((current) => {
+      const next = { ...current, geometryAssist: true };
+      if (current.geometryMode === "rigid") {
+        next.relaxationStrength = 1.2;
+      }
+      return next;
+    });
     setIsRunning(true);
 
     glucoseStageTimers.current = [
@@ -330,7 +392,13 @@ export function useSimulation() {
     clearGlucoseStageTimers();
     setActivePreset(ring);
     setGlucoseStage("ring");
-    setSettings((current) => ({ ...current, geometryAssist: true }));
+    setSettings((current) => {
+      const next = { ...current, geometryAssist: true };
+      if (current.geometryMode === "rigid") {
+        next.relaxationStrength = 1.2;
+      }
+      return next;
+    });
     setState((current) => retargetPresetState(current, ring, presetById["glucose-linear"] ?? ring, size.width, size.height, current.time, {
       event: {
         id: `glucose-anomer-${Date.now()}`,
@@ -372,6 +440,102 @@ export function useSimulation() {
     return state.atoms.filter((atom) => seen.has(atom.id));
   }, [selectedAtom, state.atoms, state.bonds]);
 
+  const setLessonState = useCallback((annotations: ViewportAnnotation[], highlightAtoms: string[], highlightBonds: string[], stepIdx: number, stepTxt?: string, total?: number, parts?: LessonAnimationPart[], reveal?: number) => {
+    setLessonAnnotations(annotations);
+    setHighlightedAtomIds(highlightAtoms);
+    setHighlightedBondIds(highlightBonds);
+    setCurrentStepIndex(stepIdx);
+    setLessonStepText(stepTxt);
+    setLessonStepIndex(stepIdx);
+    if (total !== undefined) setLessonTotalSteps(total);
+    if (parts !== undefined) setAnimParts(parts);
+    if (reveal !== undefined) setRevealedCount(reveal);
+  }, []);
+
+  const clearLessonState = useCallback(() => {
+    setLessonAnnotations([]);
+    setHighlightedAtomIds([]);
+    setHighlightedBondIds([]);
+    setCurrentStepIndex(0);
+    setLessonStepText(undefined);
+    setLessonStepIndex(0);
+    setLessonTotalSteps(0);
+    setAnimParts([]);
+    setRevealedCount(0);
+  }, []);
+
+  const addLessonAtom = useCallback((symbol: AtomSymbol, x: number, y: number) => {
+    const offset = lessonSceneOffset(size.width, size.height);
+    const atom = createAtom(symbol, x + offset.x, y + offset.y, true);
+    atom.targetX = x + offset.x;
+    atom.targetY = y + offset.y;
+    atom.vx = 0;
+    atom.vy = 0;
+    setState((current) => ({
+      ...current,
+      atoms: [...current.atoms, atom]
+    }));
+  }, [size.width, size.height]);
+
+  const moveLessonAtom = useCallback((atomIndex: number, targetX: number, targetY: number) => {
+    const offset = lessonSceneOffset(size.width, size.height);
+    setState((current) => {
+      const atoms = current.atoms.map((a, i) =>
+        i === atomIndex ? { ...a, targetX: targetX + offset.x, targetY: targetY + offset.y, guided: true } : a
+      );
+      return { ...current, atoms };
+    });
+  }, [size.width, size.height]);
+
+  const bondLessonAtoms = useCallback((atomIndexA: number, atomIndexB: number) => {
+    setState((current) => {
+      const atoms = current.atoms.map((atom) => ({ ...atom, bonds: [...atom.bonds] }));
+      const a = atoms[atomIndexA];
+      const b = atoms[atomIndexB];
+      if (!a || !b) return current;
+      if (current.bonds.some((item) => (item.a === a.id && item.b === b.id) || (item.a === b.id && item.b === a.id))) return current;
+      const bond = makeBond(a, b, current.time, settings);
+      a.bonds.push(bond.id);
+      b.bonds.push(bond.id);
+      return {
+        ...current,
+        atoms,
+        bonds: [...current.bonds, bond],
+        effects: [...current.effects, {
+          id: `effect-${bond.id}`,
+          from: bond.electronShift === a.id ? b.id : a.id,
+          to: bond.electronShift === a.id ? a.id : b.id,
+          progress: 0,
+          kind: bond.kind === "ionic" ? "transfer" : "share"
+        }],
+        events: [eventForBond(bond, a, b), ...current.events].slice(0, 8)
+      };
+    });
+  }, [settings]);
+
+  const addLessonParticles = useCallback((fromIndex: number, toIndex: number, count: number, color: string) => {
+    setState((current) => {
+      const a = current.atoms[fromIndex];
+      const b = current.atoms[toIndex];
+      if (!a || !b) return current;
+      const effects: ElectronEffect[] = [];
+      for (let i = 0; i < count; i++) {
+        effects.push({
+          id: `lesson-particle-${Date.now()}-${i}`,
+          from: a.id,
+          to: b.id,
+          progress: 0,
+          kind: "share"
+        });
+      }
+      return { ...current, effects: [...current.effects, ...effects] };
+    });
+  }, []);
+
+  const clearLessonAtoms = useCallback(() => {
+    setState((current) => createFreeState(size.width, size.height, settings));
+  }, [settings, size.height, size.width]);
+
   const reset = () => {
     if (activePreset) {
       setState(createPresetState(size.width, size.height, activePreset));
@@ -379,6 +543,15 @@ export function useSimulation() {
       resetFree(settings);
     }
   };
+
+  const flingAtom = useCallback((atomId: string, vx: number, vy: number) => {
+    setState((current) => {
+      const atoms = current.atoms.map((atom) =>
+        atom.id === atomId ? { ...atom, vx, vy } : atom
+      );
+      return { ...current, atoms };
+    });
+  }, []);
 
   const shareScene = useCallback(async () => {
     const payload = {
@@ -471,11 +644,29 @@ export function useSimulation() {
     setGlucoseAnomerTarget,
     shareScene,
     spawnFreeAtoms,
+    spawnAtom,
     resetFree,
     reset,
     selectAtom,
     selectBond,
-    moveAtom
+    moveAtom,
+    flingAtom,
+    lessonAnnotations,
+    highlightedAtomIds,
+    highlightedBondIds,
+    currentStepIndex,
+    lessonStepText,
+    lessonStepIndex,
+    lessonTotalSteps,
+    animParts,
+    revealedCount,
+    setLessonState,
+    clearLessonState,
+    addLessonAtom,
+    moveLessonAtom,
+    bondLessonAtoms,
+    addLessonParticles,
+    clearLessonAtoms
   };
 }
 function createPresetBondsForAtoms(preset: MoleculePreset, atoms: AtomParticle[], time: number): Bond[] {

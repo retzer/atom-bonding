@@ -362,6 +362,35 @@ export const moleculePresets: MoleculePreset[] = [
     science: "Real benzene has delocalized pi electrons shared across the ring rather than fixed single and double bonds. This phase-one model uses alternating bond orders so the simulator can show a recognizable aromatic structure."
   },
   {
+    id: "ethane",
+    name: "Ethane",
+    aliases: ["ethane", "c2h6", "alkane"],
+    formula: "C2H6",
+    category: "advanced",
+    geometry: "Two tetrahedral carbons joined by a single bond",
+    atoms: [
+      { symbol: "C", x: -68, y: 0 },
+      { symbol: "C", x: 68, y: 0 },
+      { symbol: "H", x: -142, y: -82 },
+      { symbol: "H", x: -154, y: 58 },
+      { symbol: "H", x: -54, y: 112 },
+      { symbol: "H", x: 142, y: -82 },
+      { symbol: "H", x: 154, y: 58 },
+      { symbol: "H", x: 54, y: 112 }
+    ],
+    bonds: [
+      { a: 0, b: 1, order: 1 },
+      { a: 0, b: 2, order: 1 },
+      { a: 0, b: 3, order: 1 },
+      { a: 0, b: 4, order: 1 },
+      { a: 1, b: 5, order: 1 },
+      { a: 1, b: 6, order: 1 },
+      { a: 1, b: 7, order: 1 }
+    ],
+    description: "Ethane is a simple hydrocarbon with two carbon atoms connected by a single covalent bond.",
+    science: "Each carbon is sp3-like in this simplified model, making four single covalent bonds: one C-C bond and three C-H bonds."
+  },
+  {
     id: "ethanol",
     name: "Ethanol",
     aliases: ["ethanol", "ethyl alcohol", "c2h6o"],

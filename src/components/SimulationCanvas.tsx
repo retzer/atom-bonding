@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { Download, Maximize2, Minimize2, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Box, Download, LocateFixed, Maximize2, Minimize2, ZoomIn, ZoomOut } from "lucide-react";
 import { atomData } from "../data/atoms";
-import type { AtomParticle, Bond, GraphicsQuality, SimulationSettings, SimulationState } from "../types";
+import { periodicElements } from "../data/periodicTable";
+import type { AtomParticle, AtomSymbol, Bond, GraphicsQuality, LessonAnimationPart, SimulationSettings, SimulationState, ViewportAnnotation } from "../types";
 import { bondKindLabel } from "../simulation/chemistry";
 import { detectFunctionalGroups } from "../simulation/functionalGroups";
 
@@ -13,20 +14,41 @@ type Props = {
   onResize: (width: number, height: number) => void;
   onSelectAtom: (id: string | null) => void;
   onSelectBond: (id: string | null) => void;
-  onMoveAtom: (id: string, x: number, y: number) => void;
+  onMoveAtom: (id: string, x: number, y: number, vx?: number, vy?: number) => void;
   onZoom: (zoom: number) => void;
+  onToggle3D: () => void;
+  onFlingAtom?: (id: string, vx: number, vy: number) => void;
+  lessonAnnotations: ViewportAnnotation[];
+  highlightedAtomIds: string[];
+  highlightedBondIds: string[];
+  lessonStepText?: string;
+  lessonStepIndex?: number;
+  lessonTotalSteps?: number;
+  animParts?: LessonAnimationPart[];
+  revealedCount?: number;
 };
 
 const devicePixelRatioSafe = (quality: GraphicsQuality) => Math.min(window.devicePixelRatio || 1, graphicsQualityProfile(quality).dprCap);
 type BondSegment = { ux: number; uy: number; px: number; py: number; startX: number; startY: number; endX: number; endY: number };
+type Camera2D = { x: number; y: number };
 const lightDirection = { x: -0.44, y: -0.5 };
+const originCamera: Camera2D = { x: 0, y: 0 };
 
-export function SimulationCanvas({ state, settings, width, height, onResize, onSelectAtom, onSelectBond, onMoveAtom, onZoom }: Props) {
+import { LessonOverlay } from "./LessonOverlay";
+
+export function SimulationCanvas({ state, settings, width, height, onResize, onSelectAtom, onSelectBond,     onMoveAtom, onZoom, onToggle3D, onFlingAtom, lessonAnnotations, highlightedAtomIds,
+  highlightedBondIds, lessonStepText, lessonStepIndex, lessonTotalSteps, animParts, revealedCount }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [panning, setPanning] = useState(false);
+  const [camera, setCamera] = useState<Camera2D>(originCamera);
   const [hoveredBondId, setHoveredBondId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const lastDragPoint = useRef<{ x: number; y: number; time: number } | null>(null);
+  const lastPanPoint = useRef<{ x: number; y: number } | null>(null);
+  const lessonActive = Boolean(lessonAnnotations.length || animParts?.length);
+  const activeCamera = settings.geometry3D || lessonActive ? originCamera : camera;
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -49,8 +71,8 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    draw(ctx, state, settings, width, height, hoveredBondId);
-  }, [height, hoveredBondId, settings, state, width]);
+    draw(ctx, state, settings, width, height, hoveredBondId, highlightedAtomIds, highlightedBondIds, activeCamera);
+  }, [height, hoveredBondId, settings, state, width, highlightedAtomIds, highlightedBondIds, activeCamera]);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === wrapRef.current);
@@ -58,11 +80,17 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     return () => document.removeEventListener("fullscreenchange", handleFullscreen);
   }, []);
 
-  const pointerPoint = (event: PointerEvent<HTMLCanvasElement>) => {
+  const pointerScreenPoint = (event: PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    const screenX = event.clientX - rect.left;
-    const screenY = event.clientY - rect.top;
-    return screenToWorld(screenX, screenY, width, height, settings.zoom);
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    };
+  };
+
+  const pointerPoint = (event: PointerEvent<HTMLCanvasElement>) => {
+    const point = pointerScreenPoint(event);
+    return screenToWorld(point.x, point.y, width, height, settings.zoom, activeCamera);
   };
 
   const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
@@ -71,6 +99,7 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     if (atom) {
       setDragging(atom.id);
       onSelectAtom(atom.id);
+      lastDragPoint.current = { x: point.x, y: point.y, time: Date.now() };
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
@@ -81,19 +110,46 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     }
     onSelectAtom(null);
     onSelectBond(null);
+    if (!settings.geometry3D && !lessonActive) {
+      setPanning(true);
+      lastPanPoint.current = pointerScreenPoint(event);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
   };
 
   const onPointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (panning && lastPanPoint.current) {
+      const screen = pointerScreenPoint(event);
+      const dx = (screen.x - lastPanPoint.current.x) / settings.zoom;
+      const dy = (screen.y - lastPanPoint.current.y) / settings.zoom;
+      setCamera((current) => ({ x: current.x + dx, y: current.y + dy }));
+      lastPanPoint.current = screen;
+      return;
+    }
     const point = pointerPoint(event);
     if (!dragging) {
       setHoveredBondId(nearestBond(state.bonds, state.atoms, point.x, point.y)?.id ?? null);
       return;
     }
+    lastDragPoint.current = { x: point.x, y: point.y, time: Date.now() };
     onMoveAtom(dragging, point.x, point.y);
   };
 
   const onPointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
+    if (dragging && onFlingAtom && lastDragPoint.current) {
+      const elapsed = Math.max(16, Date.now() - lastDragPoint.current.time);
+      const screenToWorldScale = 1 / settings.zoom;
+      const vx = (lastDragPoint.current.x - (state.atoms.find((a) => a.id === dragging)?.x ?? lastDragPoint.current.x)) * screenToWorldScale * 60 / elapsed;
+      const vy = (lastDragPoint.current.y - (state.atoms.find((a) => a.id === dragging)?.y ?? lastDragPoint.current.y)) * screenToWorldScale * 60 / elapsed;
+      const speed = Math.hypot(vx, vy);
+      if (speed > 20) {
+        onFlingAtom(dragging, vx * 0.35, vy * 0.35);
+      }
+    }
     setDragging(null);
+    setPanning(false);
+    lastDragPoint.current = null;
+    lastPanPoint.current = null;
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
     } catch {
@@ -103,6 +159,16 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
 
   const setZoom = (zoom: number) => {
     onZoom(clamp(zoom, 0.55, 2.2));
+  };
+
+  const panBy = (dx: number, dy: number) => {
+    if (settings.geometry3D || lessonActive) return;
+    setCamera((current) => ({ x: current.x + dx, y: current.y + dy }));
+  };
+
+  const resetView = () => {
+    setCamera(originCamera);
+    setZoom(1);
   };
 
   useEffect(() => {
@@ -148,6 +214,20 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
         onPointerCancel={onPointerUp}
         onPointerLeave={() => setHoveredBondId(null)}
       />
+      <LessonOverlay
+        annotations={lessonAnnotations}
+        animParts={animParts}
+        revealedCount={revealedCount}
+        stepText={lessonStepText}
+        stepIndex={lessonStepIndex}
+        totalSteps={lessonTotalSteps}
+        atoms={state.atoms.map((a, i) => ({ ...a, index: i }))}
+        bonds={state.bonds}
+        width={width}
+        height={height}
+        theme={settings.theme}
+        zoom={settings.zoom}
+      />
       <div className="zoom-controls" aria-label="Zoom controls">
         <button title="Zoom out" onClick={() => setZoom(settings.zoom - 0.12)}>
           <ZoomOut size={17} />
@@ -159,6 +239,9 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
         <button title="Reset zoom" onClick={() => setZoom(1)}>
           <Maximize2 size={17} />
         </button>
+        <button title="Switch to 3D view" onClick={onToggle3D}>
+          <Box size={17} />
+        </button>
         <button title={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
           {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
         </button>
@@ -166,15 +249,25 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
           <Download size={17} />
         </button>
       </div>
+      {!settings.geometry3D && !lessonActive && (
+        <div className="pan-controls" aria-label="Pan controls">
+          <button title="Pan up" onClick={() => panBy(0, 120)}><ArrowUp size={15} /></button>
+          <button title="Pan left" onClick={() => panBy(120, 0)}><ArrowLeft size={15} /></button>
+          <button title="Reset view" onClick={resetView}><LocateFixed size={15} /></button>
+          <button title="Pan right" onClick={() => panBy(-120, 0)}><ArrowRight size={15} /></button>
+          <button title="Pan down" onClick={() => panBy(0, -120)}><ArrowDown size={15} /></button>
+        </div>
+      )}
       <div className="canvas-readout">
         <span>{state.atoms.length} atoms</span>
         <span>{state.bonds.length} bonds</span>
         <span>{settings.geometry3D ? "VSEPR 3D" : state.metallicLattice ? "metal lattice" : "particle space"}</span>
+        {!settings.geometry3D && !lessonActive && <span>x {Math.round(-activeCamera.x)} y {Math.round(-activeCamera.y)}</span>}
       </div>
-      {state.atoms.length === 0 && (
+      {state.atoms.length === 0 && (!lessonAnnotations.length && !animParts?.length) && (
         <div className="empty-canvas-hint">
           <strong>Empty simulation space</strong>
-          <span>Choose an element below, then press Spawn one atom.</span>
+          <span>Click any element in the periodic table or controls to add an atom instantly.</span>
         </div>
       )}
     </div>
@@ -188,15 +281,16 @@ function graphicsQualityProfile(quality: GraphicsQuality) {
   return { dprCap: 1.8 };
 }
 
-function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings, width: number, height: number, hoveredBondId: string | null) {
+function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings, width: number, height: number, hoveredBondId: string | null, highlightedAtomIds: string[] = [], highlightedBondIds: string[] = [], camera: Camera2D = originCamera) {
   ctx.clearRect(0, 0, width, height);
   drawBackground(ctx, settings, width, height);
-  if (state.metallicLattice && settings.visualStyle === "detailed") drawMetalElectronCloud(ctx, state, width, height, settings.zoom);
+  if (state.metallicLattice && settings.visualStyle === "detailed") drawMetalElectronCloud(ctx, state, width, height, settings.zoom, camera);
   const renderState = settings.geometry3D ? projectedState(state) : state;
   const detailLevel = detailLevelFor2D(settings);
   const showChemistryDetail = settings.analysisMode === "chemistry" && detailLevel === "detail";
   ctx.save();
-  applyCamera(ctx, width, height, settings.zoom);
+  applyCamera(ctx, width, height, settings.zoom, camera);
+  if (!settings.geometry3D) drawCoordinateSystem(ctx, width, height, settings, camera);
   drawMoleculeShadow(ctx, renderState, settings, width, height);
   const visibleBonds = depthSortedBonds(renderState).filter((bond) => bondVisibleInMode2D(bond, renderState, settings));
   const visibleAtoms = depthSortedAtoms(renderState).filter((atom) => atomVisibleInMode2D(atom, settings));
@@ -206,9 +300,9 @@ function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: S
   if (showChemistryDetail && settings.showElectronFlow) drawElectronFlow(ctx, renderState, settings);
   for (const electron of renderState.metallicElectrons) drawFreeElectron(ctx, electron.x, electron.y, settings);
   for (const effect of renderState.effects) drawEffect(ctx, renderState, effect, settings);
-  for (const atom of visibleAtoms) drawAtom(ctx, atom, renderState, settings);
+  for (const atom of visibleAtoms) drawAtom(ctx, atom, renderState, settings, highlightedAtomIds);
   if (settings.geometry3D) {
-    for (const atom of frontBondedAtoms(renderState).filter((atom) => atomVisibleInMode2D(atom, settings))) drawAtom(ctx, atom, renderState, settings);
+    for (const atom of frontBondedAtoms(renderState).filter((atom) => atomVisibleInMode2D(atom, settings))) drawAtom(ctx, atom, renderState, settings, highlightedAtomIds);
   }
   if (showChemistryDetail && settings.showNetDipole) drawNetDipole(ctx, renderState, settings);
   if (showChemistryDetail) drawBondAngleBadge(ctx, renderState, hoveredBondId ?? renderState.selectedBondId, settings);
@@ -216,6 +310,7 @@ function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: S
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const periodicElementBySymbol = new Map(periodicElements.map((element) => [element.symbol, element]));
 type DetailLevel = "abstract" | "structure" | "detail";
 
 function detailLevelFor2D(settings: SimulationSettings): DetailLevel {
@@ -431,16 +526,23 @@ function frontBondedAtoms(state: SimulationState) {
   return [...front.values()].sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
 }
 
-function applyCamera(ctx: CanvasRenderingContext2D, width: number, height: number, zoom: number) {
+function applyCamera(ctx: CanvasRenderingContext2D, width: number, height: number, zoom: number, camera: Camera2D) {
   ctx.translate(width / 2, height / 2);
   ctx.scale(zoom, zoom);
-  ctx.translate(-width / 2, -height / 2);
+  ctx.translate(-width / 2 + camera.x, -height / 2 + camera.y);
 }
 
-function screenToWorld(screenX: number, screenY: number, width: number, height: number, zoom: number) {
+function screenToWorld(screenX: number, screenY: number, width: number, height: number, zoom: number, camera: Camera2D = originCamera) {
   return {
-    x: width / 2 + (screenX - width / 2) / zoom,
-    y: height / 2 + (screenY - height / 2) / zoom
+    x: width / 2 + (screenX - width / 2) / zoom - camera.x,
+    y: height / 2 + (screenY - height / 2) / zoom - camera.y
+  };
+}
+
+function worldToScreen(worldX: number, worldY: number, width: number, height: number, zoom: number, camera: Camera2D = originCamera) {
+  return {
+    x: width / 2 + (worldX - width / 2 + camera.x) * zoom,
+    y: height / 2 + (worldY - height / 2 + camera.y) * zoom
   };
 }
 
@@ -469,6 +571,71 @@ function palette(settings: SimulationSettings) {
     negative: light ? "#2563eb" : "#38bdf8",
     positive: light ? "#dc2626" : "#fb7185"
   };
+}
+
+function drawCoordinateSystem(ctx: CanvasRenderingContext2D, width: number, height: number, settings: SimulationSettings, camera: Camera2D) {
+  const colors = palette(settings);
+  const topLeft = screenToWorld(0, 0, width, height, settings.zoom, camera);
+  const bottomRight = screenToWorld(width, height, width, height, settings.zoom, camera);
+  const originX = width / 2;
+  const originY = height / 2;
+  const minor = 50;
+  const major = 200;
+  const minRelX = topLeft.x - originX;
+  const maxRelX = bottomRight.x - originX;
+  const minRelY = topLeft.y - originY;
+  const maxRelY = bottomRight.y - originY;
+  const startX = Math.floor(minRelX / minor) * minor;
+  const endX = Math.ceil(maxRelX / minor) * minor;
+  const startY = Math.floor(minRelY / minor) * minor;
+  const endY = Math.ceil(maxRelY / minor) * minor;
+
+  ctx.save();
+  ctx.lineWidth = 1 / settings.zoom;
+  ctx.font = `${11 / settings.zoom}px Inter, system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  for (let relX = startX; relX <= endX; relX += minor) {
+    const worldX = originX + relX;
+    const majorLine = relX % major === 0;
+    ctx.globalAlpha = relX === 0 ? 0.55 : majorLine ? 0.18 : 0.08;
+    ctx.strokeStyle = relX === 0 ? colors.freeElectron : colors.grid;
+    ctx.beginPath();
+    ctx.moveTo(worldX, topLeft.y);
+    ctx.lineTo(worldX, bottomRight.y);
+    ctx.stroke();
+    if (majorLine && relX !== 0) {
+      ctx.globalAlpha = 0.48;
+      ctx.fillStyle = colors.label;
+      ctx.fillText(String(relX), worldX, originY + 7 / settings.zoom);
+    }
+  }
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  for (let relY = startY; relY <= endY; relY += minor) {
+    const worldY = originY + relY;
+    const majorLine = relY % major === 0;
+    ctx.globalAlpha = relY === 0 ? 0.55 : majorLine ? 0.18 : 0.08;
+    ctx.strokeStyle = relY === 0 ? colors.freeElectron : colors.grid;
+    ctx.beginPath();
+    ctx.moveTo(topLeft.x, worldY);
+    ctx.lineTo(bottomRight.x, worldY);
+    ctx.stroke();
+    if (majorLine && relY !== 0) {
+      ctx.globalAlpha = 0.48;
+      ctx.fillStyle = colors.label;
+      ctx.fillText(String(-relY), originX + 8 / settings.zoom, worldY);
+    }
+  }
+
+  ctx.globalAlpha = 0.78;
+  ctx.fillStyle = colors.freeElectron;
+  ctx.beginPath();
+  ctx.arc(originX, originY, 3.5 / settings.zoom, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D, settings: SimulationSettings, width: number, height: number) {
@@ -820,7 +987,7 @@ function drawSharedElectrons(ctx: CanvasRenderingContext2D, a: AtomParticle, b: 
   }
 }
 
-function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: SimulationState, settings: SimulationSettings) {
+function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: SimulationState, settings: SimulationSettings, highlightedAtomIds: string[] = []) {
   const data = atomData[atom.symbol];
   const selected = state.selectedAtomId === atom.id;
   const colors = palette(settings);
@@ -835,6 +1002,7 @@ function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: Simu
   ctx.filter = "none";
   ctx.shadowColor = data.glow;
   ctx.shadowBlur = detailed ? (selected ? 18 : 8) * depth * clamp(depthAlpha + 0.12, 0.5, 1) : 0;
+  if (detailed) drawElementSignature(ctx, atom, state.time, settings);
   if (detailed) {
     const edgeColor = settings.theme === "light" ? mixColor(data.color, "#33443d", 0.22) : mixColor(data.color, "#050807", 0.34);
     const gradient = ctx.createRadialGradient(lightX, lightY, Math.max(2, atom.radius * 0.08), atom.x + atom.radius * 0.12, atom.y + atom.radius * 0.16, atom.radius * 1.1);
@@ -859,20 +1027,24 @@ function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: Simu
     ctx.arc(atom.x, atom.y, atom.radius, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.lineWidth = (selected ? 3 : 1.5) * depth;
-  ctx.strokeStyle = selected ? "#facc15" : detailed ? "rgba(255,255,255,0.34)" : colors.atomNeutralEdge;
+  const lessonHighlighted = highlightedAtomIds.includes(atom.id);
+  ctx.lineWidth = (selected || lessonHighlighted ? 3 : 1.5) * depth;
+  ctx.strokeStyle = selected ? "#facc15" : lessonHighlighted ? "#5eead4" : detailed ? "rgba(255,255,255,0.34)" : colors.atomNeutralEdge;
   ctx.stroke();
   ctx.shadowBlur = 0;
   ctx.filter = "none";
 
   if (settings.showShells) {
-    ctx.globalAlpha = clamp(depthAlpha + 0.08, 0.5, 1);
-    ctx.strokeStyle = colors.shell;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(atom.x, atom.y, atom.radius + 14, 0, Math.PI * 2);
-    ctx.stroke();
-    if (!settings.geometry3D) drawValenceElectrons(ctx, atom, data.valenceElectrons, state.time, settings);
+    if (!settings.geometry3D) {
+      drawElectronShellStructure(ctx, atom, state, settings, depthAlpha, selected || lessonHighlighted);
+    } else {
+      ctx.globalAlpha = clamp(depthAlpha + 0.08, 0.5, 1);
+      ctx.strokeStyle = colors.shell;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(atom.x, atom.y, atom.radius + 14, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   ctx.globalAlpha = clamp(depthAlpha + 0.16, 0.72, 1);
@@ -894,6 +1066,49 @@ function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: Simu
     ctx.fillText(data.name, atom.x, atom.y + atom.radius + 28);
   }
   if (selected) drawValenceBadge(ctx, atom, state, settings);
+  ctx.restore();
+}
+
+function drawElementSignature(ctx: CanvasRenderingContext2D, atom: AtomParticle, time: number, settings: SimulationSettings) {
+  const data = atomData[atom.symbol];
+  const colors = palette(settings);
+  ctx.save();
+  ctx.lineCap = "round";
+  if (data.nobleGas) {
+    const pulse = 0.5 + Math.sin(time * 1.7 + data.atomicNumber) * 0.5;
+    ctx.globalAlpha = settings.theme === "light" ? 0.2 + pulse * 0.08 : 0.24 + pulse * 0.1;
+    ctx.strokeStyle = data.glow;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(atom.x, atom.y, atom.radius + 20 + pulse * 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (isRadioactiveLike(atom.symbol, data.atomicNumber)) {
+    const radius = atom.radius + 24 + Math.sin(time * 2.2 + data.atomicNumber) * 2;
+    ctx.globalAlpha = settings.theme === "light" ? 0.38 : 0.48;
+    ctx.strokeStyle = data.group === "actinides" ? "#fb7185" : "#f59e0b";
+    ctx.lineWidth = 2.2;
+    for (let i = 0; i < 3; i += 1) {
+      const angle = time * 0.55 + i * Math.PI * 2 / 3;
+      ctx.beginPath();
+      ctx.arc(atom.x, atom.y, radius, angle, angle + Math.PI * 0.34);
+      ctx.stroke();
+    }
+  }
+  if (data.group === "alkali-metals" && atom.symbol !== "H") {
+    ctx.globalAlpha = settings.theme === "light" ? 0.34 : 0.46;
+    ctx.strokeStyle = colors.ionic;
+    ctx.lineWidth = 1.7;
+    for (let i = 0; i < 2; i += 1) {
+      const angle = time * 1.3 + i * Math.PI + data.atomicNumber * 0.11;
+      const r1 = atom.radius + 12;
+      const r2 = atom.radius + 21;
+      ctx.beginPath();
+      ctx.moveTo(atom.x + Math.cos(angle) * r1, atom.y + Math.sin(angle) * r1);
+      ctx.lineTo(atom.x + Math.cos(angle) * r2, atom.y + Math.sin(angle) * r2);
+      ctx.stroke();
+    }
+  }
   ctx.restore();
 }
 
@@ -934,12 +1149,76 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: n
   ctx.closePath();
 }
 
-function drawValenceElectrons(ctx: CanvasRenderingContext2D, atom: AtomParticle, count: number, time: number, settings: SimulationSettings) {
+function drawElectronShellStructure(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: SimulationState, settings: SimulationSettings, depthAlpha: number, emphasized: boolean) {
+  const element = periodicElementBySymbol.get(atom.symbol);
+  const shells = element?.shells.filter((count) => count > 0) ?? [atomData[atom.symbol].valenceElectrons];
+  const radii = shellRadii(atom, shells.length);
+  const colors = palette(settings);
+  const fullDetail = emphasized || state.atoms.length <= 18 || settings.zoom >= 1.15;
+
+  ctx.save();
+  ctx.globalAlpha = clamp(depthAlpha + 0.08, 0.5, 1);
+  ctx.strokeStyle = colors.shell;
+  ctx.lineWidth = 1;
+  for (const radius of radii) {
+    ctx.beginPath();
+    ctx.arc(atom.x, atom.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  if (!fullDetail) {
+    const outerShell = radii[radii.length - 1] ?? atom.radius + 14;
+    const freeValenceElectrons = visibleValenceElectronCount(atom, state);
+    if (freeValenceElectrons > 0) drawValenceElectrons(ctx, atom, freeValenceElectrons, state.time, settings, outerShell);
+    ctx.restore();
+    return;
+  }
+
+  for (let shellIndex = 0; shellIndex < Math.max(0, shells.length - 1); shellIndex += 1) {
+    drawShellElectrons(ctx, atom, shells[shellIndex], radii[shellIndex], state.time, settings, shellIndex);
+  }
+
+  const outerShell = radii[radii.length - 1] ?? atom.radius + 14;
+  const freeValenceElectrons = visibleValenceElectronCount(atom, state);
+  if (hasStructuralBonds(atom, state) && shouldShowLonePairs(atom)) {
+    const lonePairs = Math.floor(freeValenceElectrons / 2);
+    const singleElectrons = freeValenceElectrons % 2;
+    if (lonePairs > 0) drawLonePairs(ctx, atom, state, lonePairs, state.time, settings, outerShell);
+    if (singleElectrons > 0) drawValenceElectrons(ctx, atom, singleElectrons, state.time, settings, outerShell);
+  } else if (freeValenceElectrons > 0) {
+    drawValenceElectrons(ctx, atom, freeValenceElectrons, state.time, settings, outerShell);
+  }
+  ctx.restore();
+}
+
+function shellRadii(atom: AtomParticle, shellCount: number) {
+  const firstRadius = atom.radius + 12;
+  const spacing = clamp(12 - Math.max(0, shellCount - 4) * 0.8, 8.5, 12);
+  return Array.from({ length: shellCount }, (_, index) => firstRadius + index * spacing);
+}
+
+function drawShellElectrons(ctx: CanvasRenderingContext2D, atom: AtomParticle, count: number, orbit: number, time: number, settings: SimulationSettings, shellIndex: number) {
+  if (count <= 0) return;
+  const colors = palette(settings);
+  const electronRadius = count > 18 ? 1.55 : count > 8 ? 2 : 2.35;
+  ctx.fillStyle = settings.theme === "light" ? "rgba(4, 120, 87, 0.72)" : "rgba(167, 243, 208, 0.78)";
+  ctx.shadowColor = colors.electron;
+  ctx.shadowBlur = isDetailed(settings) && count <= 18 ? 4 : 0;
+  const drift = time * (0.16 + shellIndex * 0.035);
+  for (let i = 0; i < count; i += 1) {
+    const angle = drift + i * (Math.PI * 2 / count);
+    ctx.beginPath();
+    ctx.arc(atom.x + Math.cos(angle) * orbit, atom.y + Math.sin(angle) * orbit, electronRadius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawValenceElectrons(ctx: CanvasRenderingContext2D, atom: AtomParticle, count: number, time: number, settings: SimulationSettings, orbit = atom.radius + 14) {
   const colors = palette(settings);
   ctx.fillStyle = colors.electron;
   ctx.shadowColor = colors.electron;
   ctx.shadowBlur = isDetailed(settings) ? 8 : 0;
-  const orbit = atom.radius + 14;
   for (let i = 0; i < count; i += 1) {
     const angle = time * 0.55 + i * (Math.PI * 2 / count);
     ctx.beginPath();
@@ -947,6 +1226,101 @@ function drawValenceElectrons(ctx: CanvasRenderingContext2D, atom: AtomParticle,
     ctx.fill();
   }
   ctx.shadowBlur = 0;
+}
+
+function drawLonePairs(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: SimulationState, pairCount: number, time: number, settings: SimulationSettings, orbit = atom.radius + 16) {
+  const colors = palette(settings);
+  const angles = lonePairAngles(atom, state, Math.min(pairCount, 4));
+  ctx.save();
+  ctx.fillStyle = colors.electron;
+  ctx.strokeStyle = settings.theme === "light" ? "rgba(4, 120, 87, 0.3)" : "rgba(167, 243, 208, 0.28)";
+  ctx.shadowColor = colors.electron;
+  ctx.shadowBlur = isDetailed(settings) ? 7 : 0;
+  for (let i = 0; i < angles.length; i += 1) {
+    const angle = angles[i];
+    const wobble = Math.sin(time * 1.8 + i * 1.3) * 1.4;
+    const cx = atom.x + Math.cos(angle) * (orbit + wobble);
+    const cy = atom.y + Math.sin(angle) * (orbit + wobble);
+    const tx = -Math.sin(angle);
+    const ty = Math.cos(angle);
+    const spread = 4.2;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(cx - tx * (spread + 1.5), cy - ty * (spread + 1.5));
+    ctx.lineTo(cx + tx * (spread + 1.5), cy + ty * (spread + 1.5));
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(cx - tx * spread, cy - ty * spread, 3, 0, Math.PI * 2);
+    ctx.arc(cx + tx * spread, cy + ty * spread, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function lonePairAngles(atom: AtomParticle, state: SimulationState, count: number) {
+  const neighborAngles = structuralAtomBonds(atom, state).map((bond) => {
+    const otherId = bond.a === atom.id ? bond.b : bond.a;
+    const other = state.atoms.find((candidate) => candidate.id === otherId);
+    return other ? Math.atan2(other.y - atom.y, other.x - atom.x) : undefined;
+  }).filter((angle): angle is number => angle !== undefined);
+
+  const chosen: number[] = [];
+  const candidates = Array.from({ length: 16 }, (_, index) => index * Math.PI * 2 / 16);
+  while (chosen.length < count) {
+    let best = candidates[0];
+    let bestScore = -Infinity;
+    for (const candidate of candidates) {
+      if (chosen.some((angle) => angularDistance(angle, candidate) < 0.42)) continue;
+      const neighborScore = neighborAngles.length ? Math.min(...neighborAngles.map((angle) => angularDistance(angle, candidate))) : Math.PI;
+      const pairScore = chosen.length ? Math.min(...chosen.map((angle) => angularDistance(angle, candidate))) * 0.58 : Math.PI * 0.58;
+      const score = neighborScore + pairScore;
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+    chosen.push(best);
+  }
+  return chosen;
+}
+
+function angularDistance(a: number, b: number) {
+  const diff = Math.abs(a - b) % (Math.PI * 2);
+  return diff > Math.PI ? Math.PI * 2 - diff : diff;
+}
+
+function structuralAtomBonds(atom: AtomParticle, state: SimulationState) {
+  return state.bonds.filter((bond) =>
+    (bond.a === atom.id || bond.b === atom.id) &&
+    bond.kind !== "hydrogen" &&
+    bond.kind !== "dispersion"
+  );
+}
+
+function hasStructuralBonds(atom: AtomParticle, state: SimulationState) {
+  return structuralAtomBonds(atom, state).length > 0;
+}
+
+function shouldShowLonePairs(atom: AtomParticle) {
+  const data = atomData[atom.symbol];
+  return !data.metal && !data.nobleGas && data.valenceElectrons > 1;
+}
+
+function visibleValenceElectronCount(atom: AtomParticle, state: SimulationState) {
+  const data = atomData[atom.symbol];
+  const bondedOrder = state.bonds
+    .filter((bond) => bond.a === atom.id || bond.b === atom.id)
+    .reduce((sum, bond) => {
+      if (bond.kind === "metallic" || bond.kind === "hydrogen" || bond.kind === "dispersion") return sum;
+      if (bond.kind === "ionic") return sum + Math.max(0, atom.charge);
+      return sum + bond.order;
+    }, 0);
+  return Math.max(0, data.valenceElectrons - bondedOrder);
+}
+
+function isRadioactiveLike(symbol: AtomSymbol, atomicNumber: number) {
+  return atomicNumber >= 84 || symbol === "Tc" || symbol === "Pm";
 }
 
 function drawEffect(ctx: CanvasRenderingContext2D, state: SimulationState, effect: { from: string; to: string; progress: number; kind: string }, settings: SimulationSettings) {
@@ -967,14 +1341,15 @@ function drawEffect(ctx: CanvasRenderingContext2D, state: SimulationState, effec
   ctx.restore();
 }
 
-function drawMetalElectronCloud(ctx: CanvasRenderingContext2D, state: SimulationState, width: number, height: number, zoom: number) {
+function drawMetalElectronCloud(ctx: CanvasRenderingContext2D, state: SimulationState, width: number, height: number, zoom: number, camera: Camera2D) {
   if (!state.atoms.length) return;
   const xs = state.atoms.map((atom) => atom.x);
   const ys = state.atoms.map((atom) => atom.y);
   const worldCenterX = (Math.min(...xs) + Math.max(...xs)) / 2;
   const worldCenterY = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const centerX = width / 2 + (worldCenterX - width / 2) * zoom;
-  const centerY = height / 2 + (worldCenterY - height / 2) * zoom;
+  const center = worldToScreen(worldCenterX, worldCenterY, width, height, zoom, camera);
+  const centerX = center.x;
+  const centerY = center.y;
   const latticeRadius = Math.max(
     Math.max(...xs) - Math.min(...xs),
     Math.max(...ys) - Math.min(...ys)

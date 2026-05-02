@@ -1,17 +1,19 @@
-import { Atom, HelpCircle, Moon, Pause, Play, RotateCcw, Sun } from "lucide-react";
+import { Atom, HelpCircle, Moon, Pause, Play, RotateCcw, Sparkles, Sun } from "lucide-react";
 import type { AppMode, ThemeMode } from "../types";
 
 type Props = {
   mode: AppMode;
   theme: ThemeMode;
   running: boolean;
+  showGraphics: boolean;
   onMode: (mode: AppMode) => void;
   onTheme: () => void;
   onToggleRun: () => void;
   onReset: () => void;
+  onToggleGraphics: () => void;
 };
 
-export function TopBar({ mode, theme, running, onMode, onTheme, onToggleRun, onReset }: Props) {
+export function TopBar({ mode, theme, running, showGraphics, onMode, onTheme, onToggleRun, onReset, onToggleGraphics }: Props) {
   return (
     <header className="top-bar">
       <div className="brand">
@@ -29,6 +31,10 @@ export function TopBar({ mode, theme, running, onMode, onTheme, onToggleRun, onR
         ))}
       </nav>
       <div className="top-actions">
+        <button className={`label-button ${showGraphics ? "active" : ""}`} title="Toggle visual settings: quality, overlays, analysis modes, lighting" onClick={onToggleGraphics}>
+          <Sparkles size={16} />
+          <span>Visuals</span>
+        </button>
         <button className="icon-button" title={running ? "Pause simulation" : "Play simulation"} onClick={onToggleRun}>
           {running ? <Pause size={19} /> : <Play size={19} />}
         </button>
