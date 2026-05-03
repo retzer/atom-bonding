@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.npm-cache/
+.npm-tmp/
+.tools/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+*.local
+.DS_Store
+Thumbs.db
+*.zip
+atom-bonding-vercel-source-*.zip

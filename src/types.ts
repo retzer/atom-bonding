@@ -15,6 +15,8 @@ export type StructureDisplayMode = "full" | "simplified" | "skeleton";
 export type AnalysisMode = "structure" | "chemistry";
 export type GeometryMode = "rigid" | "flexible";
 export type GraphicsQuality = "low" | "medium" | "high" | "very-high";
+export type ElectronRenderMode2D = "particles" | "trails";
+export type AtomicModel2D = "bohr" | "probability-cloud" | "rutherford" | "spdf" | "compact";
 
 export type AtomSymbol = PeriodicElementSymbol;
 
@@ -134,10 +136,21 @@ export type SimulationSettings = {
   lightIntensity: number;
   lightColor: string;
   showShells: boolean;
+  shellOpacity2D: number;
+  shellSpacing2D: number;
+  valenceShellOnly2D: boolean;
+  atomicModel2D: AtomicModel2D;
+  electronColor2D: string;
+  electronOpacity2D: number;
+  electronRenderMode2D: ElectronRenderMode2D;
+  lonePairColor2D: string;
+  expansionScale2D: number;
   showLabels: boolean;
+  showElementNames2D: boolean;
   displayMode: StructureDisplayMode;
   analysisMode: AnalysisMode;
   showElectronRegions: boolean;
+  showBondTypes: boolean;
   showBondDipoles: boolean;
   showNetDipole: boolean;
   showCharges: boolean;
@@ -201,6 +214,7 @@ export type LessonAnimationPart =
   | { type: "electrons-at"; x: number; y: number; shells: Array<{ radius: number; count: number; color?: string; orbit?: boolean }> }
   | { type: "orbital"; atomIndex: number; count: number; radius: number; color?: string }
   | { type: "orbital-at"; x: number; y: number; count: number; radius: number; color?: string }
+  | { type: "cloud-at"; x: number; y: number; radius: number; count?: number; color?: string; label?: string }
   | { type: "text-at"; x: number; y: number; message: string; anchor?: "top" | "bottom" | "left" | "right" }
   | { type: "grid"; x: number; y: number; cols: number; rows: number; cellW: number; cellH: number; cells: Array<{ label: string; sub?: string; bgColor?: string; textColor?: string; active?: boolean; ringColor?: string }> }
   | { type: "bar"; x: number; y: number; width: number; totalWidth: number; color: string; label?: string; sub?: string }

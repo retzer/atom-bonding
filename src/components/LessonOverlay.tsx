@@ -167,6 +167,11 @@ export function LessonOverlay({ annotations, animParts, revealedCount, stepText,
               const p = part as any; drawOrbital(ctx, p.count, p.radius, p.x, p.y, p.color ?? accentColor, t);
             }
 
+            if (part.type === "cloud-at") {
+              const p = part as any;
+              drawProbabilityCloud(ctx, p.x, p.y, p.radius, p.count ?? 44, p.color ?? accentColor, p.label, t, textColor);
+            }
+
             // Position-anchored text
             if (part.type === "text-at") {
               let tx = (part as any).x; let ty = (part as any).y;
@@ -327,6 +332,57 @@ function drawOrbital(ctx: CanvasRenderingContext2D, count: number, radius: numbe
   }
 }
 
+function drawProbabilityCloud(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, count: number, color: string, label: string | undefined, t: number, textColor: string) {
+  const outer = radius * 1.65;
+  const gradient = ctx.createRadialGradient(x, y, radius * 0.18, x, y, outer);
+  gradient.addColorStop(0, colorWithAlpha(color, 0.22));
+  gradient.addColorStop(0.48, colorWithAlpha(color, 0.13));
+  gradient.addColorStop(1, colorWithAlpha(color, 0));
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(x, y, outer, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = colorWithAlpha(color, 0.46);
+  for (let i = 0; i < count; i += 1) {
+    const seed = (i + 1) * 17;
+    const angle = seed * 2.399963 + t * 0.18;
+    const dist = outer * (0.16 + 0.82 * Math.sqrt(((seed * 43) % 113) / 112));
+    const px = x + Math.cos(angle) * dist;
+    const py = y + Math.sin(angle) * dist * (0.62 + 0.14 * Math.sin(seed));
+    ctx.beginPath();
+    ctx.arc(px, py, 2.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.lineCap = "round";
+  for (let i = 0; i < 5; i += 1) {
+    const phase = i * 1.35;
+    const angle = t * (1.05 + i * 0.12) + phase;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(phase * 0.35);
+    ctx.strokeStyle = colorWithAlpha(color, 0.45);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, outer * 0.72, outer * (0.32 + i * 0.055), 0, angle - 0.45, angle + 0.08);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(Math.cos(angle) * outer * 0.72, Math.sin(angle) * outer * (0.32 + i * 0.055), 4.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  if (label) {
+    ctx.font = "900 13px Inter, system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = textColor;
+    ctx.fillText(label, x, y + outer + 18);
+  }
+}
+
 function drawNucleus(ctx: CanvasRenderingContext2D, x: number, y: number, protons: number, neutrons: number, size: number, t: number, textColor: string) {
   const scale = 2.4;
   const r = Math.max(6, size / 5 * scale);
@@ -375,6 +431,16 @@ function drawNucleus(ctx: CanvasRenderingContext2D, x: number, y: number, proton
   ctx.fillText(`${protons} protons (+)`, labelX + 14, labelY + 18);
   ctx.fillStyle = darkText ? "#d1d5db" : "#4b5563";
   ctx.fillText(`${neutrons} neutrons`, labelX + 14, labelY + 36);
+}
+
+function colorWithAlpha(color: string, alpha: number) {
+  if (!color.startsWith("#")) return color;
+  const clean = color.slice(1);
+  const value = Number.parseInt(clean.length === 3 ? clean.split("").map((part) => part + part).join("") : clean, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, alpha))})`;
 }
 
 function drawAnnotationBox(

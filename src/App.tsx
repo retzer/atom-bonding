@@ -66,6 +66,7 @@ export function App() {
               onSelectBond={sim.selectBond}
               onMoveAtom={sim.moveAtom}
               onZoom={(zoom) => sim.updateSetting("zoom", zoom)}
+              onCameraPreset={(preset) => sim.updateSetting("cameraPreset", preset)}
               onToggle3D={forcedViewport === "2d" ? () => {} : () => sim.updateSetting("geometry3D", true)}
               onFlingAtom={sim.settings.geometryMode === "flexible" ? sim.flingAtom : undefined}
               lessonAnnotations={sim.lessonAnnotations}

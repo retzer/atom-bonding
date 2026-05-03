@@ -1,0 +1,52 @@
+import type { AtomSymbol } from "../types";
+
+export type RadioactivityInfo = {
+  isotope: string;
+  halfLife: string;
+  note: string;
+  activityLevel: "low" | "medium" | "high" | "extreme";
+};
+
+export const radioactivityInfo: Partial<Record<AtomSymbol, RadioactivityInfo>> = {
+  Tc: { isotope: "Tc-99", halfLife: "211,000 years", note: "Technetium has no stable isotopes; Tc-99 is a common long-lived reference isotope.", activityLevel: "medium" },
+  Pm: { isotope: "Pm-145", halfLife: "17.7 years", note: "Promethium has no stable isotopes and is usually studied through synthetic or decay-produced samples.", activityLevel: "medium" },
+  Po: { isotope: "Po-210", halfLife: "138 days", note: "Polonium is highly radioactive and mainly known for intense alpha emission.", activityLevel: "high" },
+  At: { isotope: "At-210", halfLife: "8.1 hours", note: "Astatine is extremely rare; all known isotopes are radioactive.", activityLevel: "high" },
+  Rn: { isotope: "Rn-222", halfLife: "3.82 days", note: "Radon is a radioactive noble gas produced in uranium and radium decay chains.", activityLevel: "high" },
+  Fr: { isotope: "Fr-223", halfLife: "22 minutes", note: "Francium is intensely radioactive and exists only in trace amounts naturally.", activityLevel: "extreme" },
+  Ra: { isotope: "Ra-226", halfLife: "1,600 years", note: "Radium is radioactive and historically important in early radiation research.", activityLevel: "high" },
+  Ac: { isotope: "Ac-227", halfLife: "21.8 years", note: "Actinium is radioactive and glows faintly from ionizing radiation around it.", activityLevel: "high" },
+  Th: { isotope: "Th-232", halfLife: "14.0 billion years", note: "Thorium is naturally radioactive but decays very slowly compared with many actinides.", activityLevel: "low" },
+  Pa: { isotope: "Pa-231", halfLife: "32,760 years", note: "Protactinium is rare, radioactive, and mostly important in nuclear chemistry.", activityLevel: "medium" },
+  U: { isotope: "U-238", halfLife: "4.47 billion years", note: "Uranium is a heavy actinide used as a nuclear fuel and in radioactive dating.", activityLevel: "medium" },
+  Np: { isotope: "Np-237", halfLife: "2.14 million years", note: "Neptunium is a synthetic-heavy actinide found in spent nuclear fuel.", activityLevel: "medium" },
+  Pu: { isotope: "Pu-239", halfLife: "24,110 years", note: "Plutonium is a radioactive actinide used in nuclear technology.", activityLevel: "high" },
+  Am: { isotope: "Am-241", halfLife: "432 years", note: "Americium is radioactive; Am-241 is used in many ionization smoke detectors.", activityLevel: "high" },
+  Cm: { isotope: "Cm-247", halfLife: "15.6 million years", note: "Curium is a radioactive actinide first produced in particle bombardment experiments.", activityLevel: "medium" },
+  Bk: { isotope: "Bk-249", halfLife: "330 days", note: "Berkelium is a synthetic radioactive actinide made in nuclear reactors.", activityLevel: "high" },
+  Cf: { isotope: "Cf-251", halfLife: "898 years", note: "Californium is radioactive; some isotopes are strong neutron sources.", activityLevel: "high" },
+  Es: { isotope: "Es-252", halfLife: "472 days", note: "Einsteinium is a synthetic radioactive actinide discovered in nuclear test debris.", activityLevel: "high" },
+  Fm: { isotope: "Fm-257", halfLife: "100 days", note: "Fermium is synthetic and radioactive, produced only in very small quantities.", activityLevel: "high" },
+  Md: { isotope: "Md-258", halfLife: "51.5 days", note: "Mendelevium is synthetic and has only radioactive isotopes.", activityLevel: "high" },
+  No: { isotope: "No-259", halfLife: "58 minutes", note: "Nobelium is a short-lived synthetic actinide.", activityLevel: "extreme" },
+  Lr: { isotope: "Lr-266", halfLife: "11 hours", note: "Lawrencium is synthetic and radioactive, marking the end of the actinide series.", activityLevel: "extreme" },
+  Rf: { isotope: "Rf-267", halfLife: "1.3 hours", note: "Rutherfordium is synthetic and short-lived.", activityLevel: "extreme" },
+  Db: { isotope: "Db-268", halfLife: "32 hours", note: "Dubnium is a synthetic transactinide element with no stable isotopes.", activityLevel: "extreme" },
+  Sg: { isotope: "Sg-271", halfLife: "2.4 minutes", note: "Seaborgium is synthetic and decays quickly.", activityLevel: "extreme" },
+  Bh: { isotope: "Bh-270", halfLife: "61 seconds", note: "Bohrium is synthetic and highly short-lived.", activityLevel: "extreme" },
+  Hs: { isotope: "Hs-277", halfLife: "11 minutes", note: "Hassium is synthetic and radioactive.", activityLevel: "extreme" },
+  Mt: { isotope: "Mt-278", halfLife: "4 seconds", note: "Meitnerium is synthetic and exists only momentarily in experiments.", activityLevel: "extreme" },
+  Ds: { isotope: "Ds-281", halfLife: "12.7 seconds", note: "Darmstadtium is synthetic and very short-lived.", activityLevel: "extreme" },
+  Rg: { isotope: "Rg-282", halfLife: "100 seconds", note: "Roentgenium is synthetic and radioactive.", activityLevel: "extreme" },
+  Cn: { isotope: "Cn-285", halfLife: "29 seconds", note: "Copernicium is synthetic and short-lived.", activityLevel: "extreme" },
+  Nh: { isotope: "Nh-286", halfLife: "20 seconds", note: "Nihonium is synthetic and radioactive.", activityLevel: "extreme" },
+  Fl: { isotope: "Fl-289", halfLife: "1.9 seconds", note: "Flerovium is synthetic and decays rapidly.", activityLevel: "extreme" },
+  Mc: { isotope: "Mc-290", halfLife: "0.65 seconds", note: "Moscovium is synthetic and extremely short-lived.", activityLevel: "extreme" },
+  Lv: { isotope: "Lv-293", halfLife: "60 milliseconds", note: "Livermorium is synthetic and decays almost immediately.", activityLevel: "extreme" },
+  Ts: { isotope: "Ts-294", halfLife: "51 milliseconds", note: "Tennessine is synthetic and extremely short-lived.", activityLevel: "extreme" },
+  Og: { isotope: "Og-294", halfLife: "0.7 milliseconds", note: "Oganesson is synthetic; only a few atoms have been observed.", activityLevel: "extreme" }
+};
+
+export function radioactiveLike(symbol: AtomSymbol, atomicNumber: number) {
+  return atomicNumber >= 84 || symbol === "Tc" || symbol === "Pm";
+}

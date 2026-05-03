@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type PointerEvent } from "react";
-import { Box, Crosshair, HelpCircle, Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { Box } from "lucide-react";
 import { atomData } from "../data/atoms";
 import type { AtomParticle, Bond, GraphicsQuality, ProjectionMode, SimulationSettings, SimulationState } from "../types";
 import { detectFunctionalGroups, type FunctionalGroup } from "../simulation/functionalGroups";
@@ -332,30 +332,6 @@ export function Molecule3DView({ state, settings, running, width, height, onResi
         }}
         onContextMenu={(event) => event.preventDefault()}
       />
-      <div className="zoom-controls" aria-label="3D view controls">
-        <button title="Zoom out" onClick={() => setZoom(settings.zoom - 0.12)}><ZoomOut size={17} /></button>
-        <span>{Math.round(settings.zoom * 100)}%</span>
-        <button title="Zoom in" onClick={() => setZoom(settings.zoom + 0.12)}><ZoomIn size={17} /></button>
-        <button title="Fit molecule" onClick={fitMolecule}><Crosshair size={17} /></button>
-        <button title="Reset view" onClick={resetCamera}><RotateCcw size={17} /></button>
-        <button title="Switch to 2D view" onClick={onToggle3D}>2D</button>
-        <button title={isFullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={toggleFullscreen}>
-          {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-        </button>
-      </div>
-      <div className="camera-tooltip-wrap">
-        <button className="camera-tooltip-btn" tabIndex={0} title="Camera controls">
-          <HelpCircle size={16} />
-        </button>
-        <div className="camera-tooltip">
-          <strong>Camera controls</strong>
-          <span><kbd>Drag</kbd> Rotate</span>
-          <span><kbd>Shift</kbd><kbd>Drag</kbd> Pan</span>
-          <span><kbd>Wheel</kbd> Zoom</span>
-          <span><kbd>Fit</kbd> Frame</span>
-          <span><kbd>Right drag</kbd> Pan</span>
-        </div>
-      </div>
       <div className="canvas-readout">
         <span><Box size={13} /> VSEPR 3D renderer</span>
         <span>{Math.round(camera.fitZoom * 100)}% fit</span>
@@ -623,7 +599,7 @@ function draw3D(ctx: CanvasRenderingContext2D, atoms: SceneAtom[], sourceAtoms: 
   const lonePairs = (showLonePairDetail || showChemistryDetail && settings.showElectronRegions) ? projectLonePairs(lonePairClouds(atoms, bonds), camera, width, height, settings) : [];
   const byId = new Map(projected.map((atom) => [atom.id, atom]));
   const visibleBonds = structuralBonds(bonds).filter((bond) => bondVisibleInMode(bond, byId, settings));
-  const surfacePorts = buildSurfacePorts(projected, visibleBonds, settings, interaction, lighting);
+  const surfacePorts = settings.showElectronRegions ? buildSurfacePorts(projected, visibleBonds, settings, interaction, lighting) : new Map<string, SurfacePort[]>();
   draw3DLightSource(ctx, lighting, settings, width);
   draw3DMoleculeShadow(ctx, atoms, bonds, settings, camera, width, height, budget, lighting);
   if (showChemistryDetail && settings.showElectronRegions && budget.overlays) drawElectronRegionOverlay(ctx, projected, bonds, settings, false);
@@ -819,7 +795,7 @@ function renderWebGL3D(
   }
   drawWebGLBonds(renderer, projected, visibleBonds, worldRadii, settings, camera, interaction);
   drawWebGLAtoms(renderer, projected, visibleBonds, worldRadii, settings, interaction, budget);
-  if (settings.visualStyle === "detailed" && budget.detailedEffects && settings.displayMode !== "skeleton") {
+  if (settings.showElectronRegions && settings.visualStyle === "detailed" && budget.detailedEffects && settings.displayMode !== "skeleton") {
     drawWebGLSurfaceSockets(renderer, projected, visibleBonds, worldRadii, settings, camera, interaction);
   }
   drawWebGLLonePairs(renderer, atoms, projected, bonds, worldRadii, settings, time, budget);
@@ -1436,7 +1412,7 @@ function detailLevelFor(settings: SimulationSettings): DetailLevel {
 }
 
 function shouldShowFunctionalGroups(settings: SimulationSettings, detailLevel: DetailLevel) {
-  return settings.showFunctionalGroups || settings.analysisMode === "structure" || detailLevel === "abstract";
+  return settings.showFunctionalGroups || settings.analysisMode === "structure" && detailLevel !== "detail";
 }
 
 function atomVisibleInMode(atom: ProjectedAtom, settings: SimulationSettings) {

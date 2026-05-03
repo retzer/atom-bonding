@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { BookOpen, CheckCircle2, ChevronRight, Circle, FlaskConical, Lock, Search, Volume2, WandSparkles } from "lucide-react";
 import { guidedLessons } from "../data/lessons";
 import { moleculePresets } from "../data/presets";
@@ -8,6 +8,7 @@ import type { AppMode, AtomSymbol, GuidedLesson, LessonAnimationPart, LessonStep
 
 type GlucoseAnomer = "alpha" | "beta";
 type GlucoseStage = "idle" | "aldehyde" | "hemiacetal" | "ring";
+type QuizFeedbackKind = "perfect" | "zero";
 
 type Props = {
   mode: AppMode;
@@ -184,6 +185,7 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizPassed, setQuizPassed] = useState(false);
+  const [quizFeedback, setQuizFeedback] = useState<QuizFeedbackKind | null>(null);
   const [introAccepted, setIntroAccepted] = useState(false);
   const [activeLessonId, setActiveLessonId] = useState<string>("");
   const [animationRevision, setAnimationRevision] = useState(0);
@@ -261,6 +263,7 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
 
   const handleCloseQuiz = () => {
     setShowQuiz(false);
+    setQuizFeedback(null);
     window.clearTimeout(quizAdvanceTimer.current);
     quizAdvanceTimer.current = 0;
     if (activeLesson && quizPassed) {
@@ -283,6 +286,7 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
     setQuizAnswers({});
     setQuizSubmitted(false);
     setQuizPassed(false);
+    setQuizFeedback(null);
     setAnimationRevision((value) => value + 1);
     window.clearTimeout(quizAdvanceTimer.current);
     quizAdvanceTimer.current = 0;
@@ -365,6 +369,8 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
       setShowQuiz(true);
       setQuizAnswers({});
       setQuizSubmitted(false);
+      setQuizPassed(false);
+      setQuizFeedback(null);
     } else {
       markComplete(activeLesson.id);
       setStepIndex(0);
@@ -408,16 +414,28 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
   };
 
   const handleQuizSubmit = () => {
+    if (!activeLesson?.quizzes?.length) return;
     setQuizSubmitted(true);
-    const allCorrect = activeLesson?.quizzes?.every((_, i) => quizAnswers[i] === activeLesson.quizzes![i].correctIndex);
+    const correctCount = activeLesson.quizzes.reduce(
+      (score, quiz, i) => score + (quizAnswers[i] === quiz.correctIndex ? 1 : 0),
+      0
+    );
+    const allCorrect = correctCount === activeLesson.quizzes.length;
+    const allWrong = correctCount === 0;
     if (allCorrect) {
       setQuizPassed(true);
+      setQuizFeedback("perfect");
+      playQuizSuccessSound();
       if (activeLesson) markComplete(activeLesson.id);
       window.clearTimeout(quizAdvanceTimer.current);
       quizAdvanceTimer.current = window.setTimeout(() => {
         quizAdvanceTimer.current = 0;
         advanceToNextLesson();
-      }, 1200);
+      }, 2400);
+    } else {
+      setQuizPassed(false);
+      setQuizFeedback(allWrong ? "zero" : null);
+      if (allWrong) playQuizFailureSound();
     }
   };
 
@@ -470,6 +488,7 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
 
       {introAccepted && showQuiz && activeLesson?.quizzes && (
         <div className="lesson-quiz">
+          {quizFeedback && <QuizFeedbackOverlay kind={quizFeedback} />}
           <h3 style={{ margin: 0, fontSize: "1rem", color: "#ffffff" }}>Check your understanding</h3>
           {activeLesson.quizzes.map((q, qi) => (
             <QuizCard key={qi} question={q} index={qi} selected={quizAnswers[qi]} submitted={quizSubmitted} onSelect={(a) => setQuizAnswers((p) => ({ ...p, [qi]: a }))} />
@@ -485,7 +504,7 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
                   <p className="quiz-fail">Review incorrect answers above.</p>
                 )}
                 {!quizPassed ? (
-                  <button className="quiz-retry" onClick={() => { setQuizAnswers({}); setQuizSubmitted(false); setQuizPassed(false); }} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 16px", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px", color: "#eef5f1", background: "transparent", fontSize: "0.85rem", fontWeight: 900, cursor: "pointer" }}>Retry</button>
+                  <button className="quiz-retry" onClick={() => { setQuizAnswers({}); setQuizSubmitted(false); setQuizPassed(false); setQuizFeedback(null); }} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 16px", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px", color: "#eef5f1", background: "transparent", fontSize: "0.85rem", fontWeight: 900, cursor: "pointer" }}>Retry</button>
                 ) : (
                   <button className="quiz-continue" onClick={handleCloseQuiz} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 16px", border: "1px solid transparent", borderRadius: "8px", color: "#071412", background: "#a7f3d0", fontSize: "0.85rem", fontWeight: 900, cursor: "pointer" }}>Continue</button>
                 )}
@@ -565,6 +584,11 @@ const lessonStudyNotes: Record<string, StudyNote[]> = {
   "m01-shells": [
     { idea: "Electrons fill lower-energy shells first. Filled inner shells are usually not the main bonding electrons.", check: "Oxygen has 2 inner electrons and 6 valence electrons." },
     { idea: "The valence shell controls many chemical properties because it is the outer shell that other atoms interact with.", check: "Oxygen tends to form 2 bonds because it has 6 valence electrons and is 2 short of an octet." }
+  ],
+  "m01-models": [
+    { idea: "The Bohr model is a simplified picture: electrons are drawn on circular energy shells.", check: "Use it when you want to count shells and valence electrons quickly." },
+    { idea: "Modern atomic theory uses orbitals and probability clouds. Electrons do not travel on exact planet-like paths.", check: "A denser cloud means a higher chance of finding an electron in that region." },
+    { idea: "Models are tools. A simple model can teach one idea well, while a more realistic model explains deeper behavior.", check: "Ask what question the model is trying to answer." }
   ]
 };
 
@@ -596,6 +620,40 @@ function LessonStudyNote({ lesson, stepIndex }: { lesson: GuidedLesson; stepInde
       <div>
         <strong>Check yourself</strong>
         <p>{note.check}</p>
+      </div>
+    </div>
+  );
+}
+
+function QuizFeedbackOverlay({ kind }: { kind: QuizFeedbackKind }) {
+  const colors = ["#5eead4", "#facc15", "#fb7185", "#60a5fa", "#a78bfa", "#34d399"];
+  const confetti = Array.from({ length: 44 }, (_, i) => {
+    const style = {
+      left: `${6 + ((i * 19) % 88)}%`,
+      animationDelay: `${(i % 11) * 38}ms`,
+      background: colors[i % colors.length],
+      transform: `rotate(${(i * 37) % 180}deg)`,
+      "--quiz-confetti-drift": `${((i % 9) - 4) * 14}px`
+    } as CSSProperties;
+    return <i key={i} style={style} />;
+  });
+
+  return (
+    <div className={`quiz-feedback-overlay ${kind}`} aria-live="polite">
+      {kind === "perfect" && <div className="quiz-confetti">{confetti}</div>}
+      <div className={`quiz-feedback-card ${kind}`}>
+        {kind === "perfect" ? (
+          <>
+            <CheckCircle2 size={58} />
+            <strong>Excellent work!</strong>
+            <span>All answers correct.</span>
+          </>
+        ) : (
+          <>
+            <strong className="quiz-feedback-x">X</strong>
+            <span>Try again!</span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -638,4 +696,106 @@ function findMoleculeMatches(q: string) {
   const n = normalize(q);
   if (!n) return moleculePresets.slice(0, 4);
   return moleculePresets.filter((p) => [p.name, p.formula, p.id, ...(p.aliases ?? [])].some((t) => normalize(t).includes(n))).slice(0, 5);
+}
+
+function createLessonAudioContext() {
+  const AudioContextCtor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  return AudioContextCtor ? new AudioContextCtor() : null;
+}
+
+function playQuizSuccessSound() {
+  try {
+    const audio = createLessonAudioContext();
+    if (!audio) return;
+    const master = audio.createGain();
+    master.gain.setValueAtTime(0.18, audio.currentTime);
+    master.connect(audio.destination);
+    const now = audio.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.51];
+
+    notes.forEach((frequency, i) => {
+      const start = now + i * 0.085;
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      oscillator.type = i % 2 === 0 ? "triangle" : "sine";
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.42, start + 0.018);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.35);
+      oscillator.connect(gain);
+      gain.connect(master);
+      oscillator.start(start);
+      oscillator.stop(start + 0.38);
+    });
+
+    const shimmer = audio.createBufferSource();
+    const shimmerGain = audio.createGain();
+    const buffer = audio.createBuffer(1, audio.sampleRate * 0.42, audio.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i += 1) {
+      samples[i] = (Math.random() * 2 - 1) * (1 - i / samples.length);
+    }
+    shimmer.buffer = buffer;
+    const highpass = audio.createBiquadFilter();
+    highpass.type = "highpass";
+    highpass.frequency.setValueAtTime(4200, now);
+    shimmerGain.gain.setValueAtTime(0.035, now + 0.08);
+    shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
+    shimmer.connect(highpass);
+    highpass.connect(shimmerGain);
+    shimmerGain.connect(master);
+    shimmer.start(now + 0.08);
+    shimmer.stop(now + 0.52);
+
+    window.setTimeout(() => void audio.close(), 900);
+  } catch {
+    // Browser audio can be blocked by device settings; the visual feedback still runs.
+  }
+}
+
+function playQuizFailureSound() {
+  try {
+    const audio = createLessonAudioContext();
+    if (!audio) return;
+    const master = audio.createGain();
+    master.gain.setValueAtTime(0.22, audio.currentTime);
+    master.connect(audio.destination);
+    const now = audio.currentTime;
+
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    oscillator.type = "sawtooth";
+    oscillator.frequency.setValueAtTime(220, now);
+    oscillator.frequency.exponentialRampToValueAtTime(78, now + 0.34);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.32, now + 0.018);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+    oscillator.connect(gain);
+    gain.connect(master);
+    oscillator.start(now);
+    oscillator.stop(now + 0.4);
+
+    const thud = audio.createBufferSource();
+    const thudGain = audio.createGain();
+    const buffer = audio.createBuffer(1, audio.sampleRate * 0.18, audio.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i += 1) {
+      samples[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audio.sampleRate * 0.045));
+    }
+    const lowpass = audio.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.setValueAtTime(620, now);
+    thudGain.gain.setValueAtTime(0.12, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+    thud.buffer = buffer;
+    thud.connect(lowpass);
+    lowpass.connect(thudGain);
+    thudGain.connect(master);
+    thud.start(now);
+    thud.stop(now + 0.2);
+
+    window.setTimeout(() => void audio.close(), 700);
+  } catch {
+    // Browser audio can be blocked by device settings; the visual feedback still runs.
+  }
 }

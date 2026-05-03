@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { atomData } from "../data/atoms";
+import { elementDetails } from "../data/elementDetails";
 import { periodicElements, type PeriodicElementInfo } from "../data/periodicTable";
 import type { AtomSymbol } from "../types";
+
+const previewHoverDelayMs = 2400;
 
 type Props = {
   selectedElements: AtomSymbol[];
@@ -17,7 +20,8 @@ export function PeriodicTable({ selectedElements, onElementClick, defaultOpen = 
 
   const beginPreview = (element: PeriodicElementInfo) => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setPreview(element), 900);
+    setPreview(null);
+    timerRef.current = window.setTimeout(() => setPreview(element), previewHoverDelayMs);
   };
 
   const endPreview = () => {
@@ -56,8 +60,8 @@ export function PeriodicTable({ selectedElements, onElementClick, defaultOpen = 
           {open ? "Collapse" : "Open table"}
         </button>
       </div>
-      {open && <div className="periodic-table-shell">
-        <div className="periodic-grid" onMouseLeave={endPreview}>
+      {open && <div className="periodic-table-shell" onMouseLeave={endPreview}>
+        <div className="periodic-grid">
           {periodicElements.map((element) => {
             const atom = atomData[element.symbol];
             const selected = selectedElements.includes(element.symbol);
@@ -92,9 +96,14 @@ export function PeriodicTable({ selectedElements, onElementClick, defaultOpen = 
 
 function ElementPreview({ element }: { element: PeriodicElementInfo }) {
   const atom = atomData[element.symbol];
+  const detail = elementDetails[element.symbol];
   const visibleShells = element.shells.filter((count) => count > 0);
   const valenceCount = Math.max(element.valenceElectrons, 0);
   const valenceShellIndex = visibleShells.length - 1;
+  const previewMaxRadius = 88;
+  const previewBaseRadius = visibleShells.length > 5 ? 30 : 36;
+  const previewSpacing = visibleShells.length <= 1 ? 0 : Math.min(18, (previewMaxRadius - previewBaseRadius) / (visibleShells.length - 1));
+  const previewRadii = visibleShells.map((_, index) => previewBaseRadius + index * previewSpacing);
   const shellText = visibleShells.map((count, index) => `${index + 1}: ${count}`).join("  ");
 
   return (
@@ -105,7 +114,7 @@ function ElementPreview({ element }: { element: PeriodicElementInfo }) {
           <span>{element.atomicNumber}</span>
         </div>
         {visibleShells.map((_, index) => {
-          const radius = 44 + index * 22;
+          const radius = previewRadii[index];
           return (
             <span
               key={`${element.symbol}-shell-${index}`}
@@ -123,8 +132,8 @@ function ElementPreview({ element }: { element: PeriodicElementInfo }) {
             key={`${element.symbol}-electron-${index}`}
             className="preview-electron-orbit"
             style={{
-              width: (44 + valenceShellIndex * 22) * 2,
-              height: (44 + valenceShellIndex * 22) * 2,
+              width: (previewRadii[valenceShellIndex] ?? previewBaseRadius) * 2,
+              height: (previewRadii[valenceShellIndex] ?? previewBaseRadius) * 2,
               animationDelay: `${index * -0.62}s`,
               animationDuration: `${4.8 + Math.min(valenceShellIndex, 4) * 0.8}s`,
               "--start-angle": `${(360 / Math.max(valenceCount, 1)) * index}deg`
@@ -142,6 +151,7 @@ function ElementPreview({ element }: { element: PeriodicElementInfo }) {
             <small>{element.categoryLabel}</small>
           </div>
         </div>
+        {detail && <p className="preview-description">{detail.description}</p>}
         <dl>
           <div><dt>Mass</dt><dd>{element.atomicMass}</dd></div>
           <div><dt>Period / Group</dt><dd>{element.period} / {element.group || "series"}</dd></div>
@@ -157,7 +167,8 @@ function ElementPreview({ element }: { element: PeriodicElementInfo }) {
           <div><dt>Shells</dt><dd>{shellText}</dd></div>
           <div><dt>Configuration</dt><dd>{element.electronConfiguration}</dd></div>
           <div><dt>Oxidation</dt><dd>{element.oxidationStates || "N/A"}</dd></div>
-          <div><dt>Discovered</dt><dd>{element.yearDiscovered || "Unknown"}</dd></div>
+          <div><dt>Discovered</dt><dd>{detail?.discoveryYear || element.yearDiscovered || "Unknown"}</dd></div>
+          <div><dt>Discoverer</dt><dd>{detail?.discoveredBy || "Unknown"}</dd></div>
         </dl>
       </div>
     </aside>
