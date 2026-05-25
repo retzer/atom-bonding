@@ -18,7 +18,7 @@ async function walk(dir) {
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) files.push(...await walk(full));
-    if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name)) files.push(full);
+    if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) files.push(full);
   }
   return files;
 }

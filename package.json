@@ -2,12 +2,20 @@
   "name": "atom-bonding-studio",
   "private": true,
   "version": "0.1.0",
+  "description": "Interactive chemistry simulator with guided learning, molecule analysis, isotope-aware time, and The Electron Engine.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/retzer/atom-bonding.git"
+  },
+  "homepage": "https://github.com/retzer/atom-bonding#readme",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "chem-ai": "node scripts/chem-ai-proxy.mjs",
     "build": "vite build",
     "build:local": "powershell -ExecutionPolicy Bypass -File scripts/build.ps1",
-    "preview": "node scripts/serve-dist.mjs"
+    "preview": "node scripts/serve-dist.mjs",
+    "test:unit": "vitest run src/simulation/reactions.test.ts src/simulation/electronMechanism.test.ts src/simulation/isotopes.test.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.0",
@@ -24,6 +32,7 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "vitest": "^4.1.5"
   }
 }

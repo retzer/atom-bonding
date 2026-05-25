@@ -172,6 +172,11 @@ export function LessonOverlay({ annotations, animParts, revealedCount, stepText,
               drawProbabilityCloud(ctx, p.x, p.y, p.radius, p.count ?? 44, p.color ?? accentColor, p.label, t, textColor);
             }
 
+            if (part.type === "lewis") {
+              const p = part as any;
+              drawLewisDot(ctx, p.x, p.y, p.symbol, p.dots, p.label, p.color ?? accentColor, textColor, bgColor);
+            }
+
             // Position-anchored text
             if (part.type === "text-at") {
               let tx = (part as any).x; let ty = (part as any).y;
@@ -381,6 +386,57 @@ function drawProbabilityCloud(ctx: CanvasRenderingContext2D, x: number, y: numbe
     ctx.fillStyle = textColor;
     ctx.fillText(label, x, y + outer + 18);
   }
+}
+
+function drawLewisDot(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  symbol: string,
+  dots: number,
+  label: string | undefined,
+  color: string,
+  textColor: string,
+  bgColor: string
+) {
+  ctx.save();
+  const boxW = 118;
+  const boxH = 108;
+  ctx.fillStyle = bgColor;
+  ctx.strokeStyle = colorWithAlpha(color, 0.62);
+  ctx.lineWidth = 1.6;
+  roundRect(ctx, x - boxW / 2, y - boxH / 2, boxW, boxH, 12);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = textColor;
+  ctx.font = "950 38px Inter, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(symbol, x, y - 4);
+
+  const sideSlots = [
+    [{ x: x, y: y - 34 }, { x: x + 14, y: y - 34 }],
+    [{ x: x + 36, y: y - 4 }, { x: x + 36, y: y + 10 }],
+    [{ x: x, y: y + 30 }, { x: x + 14, y: y + 30 }],
+    [{ x: x - 36, y: y - 4 }, { x: x - 36, y: y + 10 }]
+  ];
+  const orderedSlots = [...sideSlots.map((side) => side[0]), ...sideSlots.map((side) => side[1])];
+  ctx.fillStyle = color;
+  for (let i = 0; i < Math.min(8, Math.max(0, dots)); i++) {
+    const dot = orderedSlots[i];
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, 4.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (label) {
+    ctx.fillStyle = textColor;
+    ctx.globalAlpha = 0.82;
+    ctx.font = "850 12px Inter, system-ui";
+    ctx.fillText(label, x, y + boxH / 2 + 18);
+  }
+  ctx.restore();
 }
 
 function drawNucleus(ctx: CanvasRenderingContext2D, x: number, y: number, protons: number, neutrons: number, size: number, t: number, textColor: string) {

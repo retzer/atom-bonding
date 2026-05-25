@@ -1,5 +1,5 @@
 import { atomData } from "./atoms";
-import type { AtomSymbol, BondKind, MoleculePreset } from "../types";
+import type { AtomSymbol, BondKind, MoleculePreset, PubChemCompoundInfo } from "../types";
 import { classifyBond } from "../simulation/chemistry";
 
 const PUBCHEM_BASE = "https://pubchem.ncbi.nlm.nih.gov/rest/pug";
@@ -18,10 +18,30 @@ type PubChemProperties = {
     Properties?: Array<{
       CID: number;
       MolecularFormula?: string;
+      MolecularWeight?: number | string;
+      ExactMass?: number | string;
       IUPACName?: string;
       Title?: string;
       CanonicalSMILES?: string;
       IsomericSMILES?: string;
+      InChI?: string;
+      InChIKey?: string;
+      XLogP?: number | string;
+      TPSA?: number | string;
+      HBondDonorCount?: number;
+      HBondAcceptorCount?: number;
+      RotatableBondCount?: number;
+      Charge?: number;
+      Complexity?: number | string;
+    }>;
+  };
+};
+
+type PubChemSynonyms = {
+  InformationList?: {
+    Information?: Array<{
+      CID: number;
+      Synonym?: string[];
     }>;
   };
 };
@@ -43,9 +63,10 @@ export async function fetchPubChemMolecule(query: string): Promise<MoleculePrese
   if (!cleanQuery) throw new Error("Type a molecule name first.");
 
   const cid = await fetchFirstCid(cleanQuery);
-  const [properties, sdf] = await Promise.all([
+  const [properties, sdf, synonyms] = await Promise.all([
     fetchProperties(cid),
-    fetchSdf(cid)
+    fetchSdf(cid),
+    fetchSynonyms(cid)
   ]);
   const parsed = parseSdf(sdf);
 
@@ -58,17 +79,39 @@ export async function fetchPubChemMolecule(query: string): Promise<MoleculePrese
 
   const title = properties.Title || cleanQuery;
   const formula = properties.MolecularFormula || formulaFor(parsed.atoms);
+  const pubChem: PubChemCompoundInfo = {
+    cid,
+    title,
+    iupacName: properties.IUPACName,
+    synonyms,
+    molecularFormula: properties.MolecularFormula,
+    molecularWeight: properties.MolecularWeight,
+    exactMass: properties.ExactMass,
+    canonicalSmiles: properties.CanonicalSMILES,
+    isomericSmiles: properties.IsomericSMILES,
+    inchi: properties.InChI,
+    inchiKey: properties.InChIKey,
+    xlogp: properties.XLogP,
+    tpsa: properties.TPSA,
+    hBondDonorCount: properties.HBondDonorCount,
+    hBondAcceptorCount: properties.HBondAcceptorCount,
+    rotatableBondCount: properties.RotatableBondCount,
+    formalCharge: properties.Charge,
+    complexity: properties.Complexity,
+    sourceUrl: `https://pubchem.ncbi.nlm.nih.gov/compound/${cid}`
+  };
   return {
     id: `pubchem-${cid}`,
     name: title,
-    aliases: [cleanQuery, properties.IUPACName, properties.CanonicalSMILES, properties.IsomericSMILES].filter(Boolean) as string[],
+    aliases: uniqueStrings([cleanQuery, properties.IUPACName, ...synonyms.slice(0, 10), properties.CanonicalSMILES, properties.IsomericSMILES].filter(Boolean) as string[]),
     formula,
     category: "advanced",
     geometry: "PubChem 2D structure",
     atoms: parsed.atoms,
     bonds: parsed.bonds,
     description: `${title} was imported from PubChem CID ${cid}.`,
-    science: `${formula} came from PubChem's compound record. The simulator uses PubChem's 2D atom coordinates and bond connectivity, then classifies each bond with the local electronegativity model.`
+    science: `${formula} came from PubChem's compound record. The simulator uses PubChem's 2D atom coordinates and bond connectivity, then classifies each bond with the local electronegativity model.`,
+    pubChem
   };
 }
 
@@ -91,10 +134,20 @@ async function fetchFirstCid(query: string) {
 }
 
 async function fetchProperties(cid: number) {
-  const fields = "MolecularFormula,IUPACName,Title,CanonicalSMILES,IsomericSMILES";
+  const fields = "MolecularFormula,MolecularWeight,ExactMass,IUPACName,Title,CanonicalSMILES,IsomericSMILES,InChI,InChIKey,XLogP,TPSA,HBondDonorCount,HBondAcceptorCount,RotatableBondCount,Charge,Complexity";
   const url = `${PUBCHEM_BASE}/compound/cid/${cid}/property/${fields}/JSON`;
   const data = await fetchJson<PubChemProperties>(url);
   return data.PropertyTable?.Properties?.[0] ?? { CID: cid };
+}
+
+async function fetchSynonyms(cid: number) {
+  try {
+    const url = `${PUBCHEM_BASE}/compound/cid/${cid}/synonyms/JSON`;
+    const data = await fetchJson<PubChemSynonyms>(url);
+    return uniqueStrings(data.InformationList?.Information?.[0]?.Synonym ?? []).slice(0, 16);
+  } catch {
+    return [];
+  }
 }
 
 async function fetchSdf(cid: number) {
@@ -227,4 +280,15 @@ function formulaFor(atoms: Array<{ symbol: AtomSymbol }>) {
     return a.localeCompare(b);
   });
   return symbols.map((symbol) => `${symbol}${counts[symbol] > 1 ? counts[symbol] : ""}`).join("");
+}
+
+function uniqueStrings(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const clean = value.trim();
+    const key = clean.toLocaleLowerCase();
+    if (!clean || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

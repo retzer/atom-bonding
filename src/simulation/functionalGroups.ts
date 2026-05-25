@@ -1,7 +1,7 @@
 import type { AtomParticle, Bond } from "../types";
 import { structuralBonds } from "./graph";
 
-export type FunctionalGroupKind = "alcohol" | "amine" | "carbonyl" | "aromatic";
+export type FunctionalGroupKind = "alcohol" | "amine" | "carbonyl" | "aldehyde" | "polyol" | "hemiacetal-potential" | "aromatic";
 
 export type FunctionalGroup = {
   id: string;
@@ -16,6 +16,9 @@ const groupColor: Record<FunctionalGroupKind, string> = {
   alcohol: "#06b6d4",
   amine: "#8b5cf6",
   carbonyl: "#f43f5e",
+  aldehyde: "#fb7185",
+  polyol: "#14b8a6",
+  "hemiacetal-potential": "#f97316",
   aromatic: "#f59e0b"
 };
 
@@ -32,13 +35,17 @@ export function detectFunctionalGroups(atoms: AtomParticle[], bonds: Bond[]): Fu
   }
 
   const groups: FunctionalGroup[] = [];
+  const alcoholGroups: FunctionalGroup[] = [];
+  const aldehydeGroups: FunctionalGroup[] = [];
   for (const atom of atoms) {
     const bonded = neighbors.get(atom.id) ?? [];
     if (atom.symbol === "O") {
       const hydrogens = bonded.filter((item) => item.atom.symbol === "H");
       const carbons = bonded.filter((item) => item.atom.symbol === "C");
       if (hydrogens.length && carbons.length) {
-        groups.push(makeGroup("alcohol", "alcohol -OH", [atom.id, hydrogens[0].atom.id, carbons[0].atom.id], [hydrogens[0].bond.id, carbons[0].bond.id]));
+        const group = makeGroup("alcohol", "alcohol -OH", [atom.id, hydrogens[0].atom.id, carbons[0].atom.id], [hydrogens[0].bond.id, carbons[0].bond.id]);
+        groups.push(group);
+        alcoholGroups.push(group);
       }
     }
 
@@ -55,8 +62,32 @@ export function detectFunctionalGroups(atoms: AtomParticle[], bonds: Bond[]): Fu
       const oxygenDouble = bonded.find((item) => item.atom.symbol === "O" && item.bond.order >= 2);
       if (oxygenDouble) {
         groups.push(makeGroup("carbonyl", "carbonyl C=O", [atom.id, oxygenDouble.atom.id], [oxygenDouble.bond.id]));
+        const hydrogenSingle = bonded.find((item) => item.atom.symbol === "H" && item.bond.order === 1);
+        if (hydrogenSingle) {
+          const group = makeGroup("aldehyde", "aldehyde -CHO", [atom.id, oxygenDouble.atom.id, hydrogenSingle.atom.id], [oxygenDouble.bond.id, hydrogenSingle.bond.id]);
+          groups.push(group);
+          aldehydeGroups.push(group);
+        }
       }
     }
+  }
+
+  if (alcoholGroups.length >= 3) {
+    groups.push(makeGroup(
+      "polyol",
+      "polyol: many -OH groups",
+      alcoholGroups.flatMap((group) => group.atomIds),
+      alcoholGroups.flatMap((group) => group.bondIds)
+    ));
+  }
+
+  if (aldehydeGroups.length && alcoholGroups.length) {
+    groups.push(makeGroup(
+      "hemiacetal-potential",
+      "hemiacetal potential",
+      [...aldehydeGroups[0].atomIds, ...alcoholGroups.flatMap((group) => group.atomIds)],
+      [...aldehydeGroups[0].bondIds, ...alcoholGroups.flatMap((group) => group.bondIds)]
+    ));
   }
 
   for (const ring of findAromaticRings(atoms, structural, neighbors).slice(0, 8)) {

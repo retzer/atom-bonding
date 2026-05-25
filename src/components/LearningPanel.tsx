@@ -2,13 +2,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { BookOpen, CheckCircle2, ChevronRight, Circle, FlaskConical, Lock, Search, Volume2, WandSparkles } from "lucide-react";
 import { guidedLessons } from "../data/lessons";
+import {
+  buildCumulativeReviewQuestions,
+  buildLessonQuizQuestions,
+  buildModuleAssessmentQuestions as buildFrameworkModuleAssessmentQuestions,
+  conceptRegistry,
+  conceptsForStep,
+  curriculumForLesson,
+  moduleSummaries,
+  objectivesForStep,
+  recallCandidatesForLesson,
+  updateConceptProgress
+} from "../data/learningFramework";
 import { moleculePresets } from "../data/presets";
 import { fetchPubChemMolecule, fetchPubChemSuggestions } from "../data/pubchem";
-import type { AppMode, AtomSymbol, GuidedLesson, LessonAnimationPart, LessonStep, LessonStepAnimation, MoleculePreset, QuizQuestion, ViewportAnnotation } from "../types";
+import type { AppMode, AtomSymbol, ConceptProgress, GuidedLesson, LessonAnimationPart, LessonStep, LessonStepAnimation, MoleculePreset, QuizQuestion, ViewportAnnotation } from "../types";
 
 type GlucoseAnomer = "alpha" | "beta";
 type GlucoseStage = "idle" | "aldehyde" | "hemiacetal" | "ring";
 type QuizFeedbackKind = "perfect" | "zero";
+type GuidedModule = { id: string; title: string; lessons: GuidedLesson[] };
+type ModuleAssessment = { moduleId: string; moduleTitle: string; questions: QuizQuestion[]; kind: "module" | "cumulative" };
 
 type Props = {
   mode: AppMode;
@@ -41,6 +55,7 @@ const presetFolders: Array<{ category: PresetCategory; title: string; descriptio
 ];
 
 const STORAGE_KEY = "atom-bonding-progress-v2";
+const CONCEPT_PROGRESS_KEY = "atom-bonding-concept-progress-v1";
 
 function loadProgress(): string[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]"); } catch { return []; }
@@ -48,6 +63,14 @@ function loadProgress(): string[] {
 
 function saveProgress(ids: string[]) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ids)); } catch {}
+}
+
+function loadConceptProgress(): Record<string, ConceptProgress> {
+  try { return JSON.parse(localStorage.getItem(CONCEPT_PROGRESS_KEY) ?? "{}"); } catch { return {}; }
+}
+
+function saveConceptProgress(progress: Record<string, ConceptProgress>) {
+  try { localStorage.setItem(CONCEPT_PROGRESS_KEY, JSON.stringify(progress)); } catch {}
 }
 
 export function LearningPanel({
@@ -180,12 +203,16 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
   onActiveLessonChange?: Props["onActiveLessonChange"];
 }) {
   const [completed, setCompleted] = useState<string[]>(loadProgress);
+  const [conceptProgress, setConceptProgress] = useState<Record<string, ConceptProgress>>(loadConceptProgress);
   const [stepIndex, setStepIndex] = useState(0);
   const [showQuiz, setShowQuiz] = useState(false);
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizPassed, setQuizPassed] = useState(false);
   const [quizFeedback, setQuizFeedback] = useState<QuizFeedbackKind | null>(null);
+  const [moduleAssessment, setModuleAssessment] = useState<ModuleAssessment | null>(null);
+  const [pendingModuleSummaryId, setPendingModuleSummaryId] = useState<string | null>(null);
   const [introAccepted, setIntroAccepted] = useState(false);
   const [activeLessonId, setActiveLessonId] = useState<string>("");
   const [animationRevision, setAnimationRevision] = useState(0);
@@ -194,15 +221,17 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
   const quizAdvanceTimer = useRef<number>(0);
 
   const modules = useMemo(() => {
-    const map = new Map<string, { title: string; lessons: GuidedLesson[] }>();
+    const map = new Map<string, GuidedModule>();
     for (const l of guidedLessons) {
-      if (!map.has(l.moduleId)) map.set(l.moduleId, { title: l.moduleTitle, lessons: [] });
+      if (!map.has(l.moduleId)) map.set(l.moduleId, { id: l.moduleId, title: l.moduleTitle, lessons: [] });
       map.get(l.moduleId)!.lessons.push(l);
     }
     return [...map.values()];
   }, []);
 
   const activeLesson = guidedLessons.find((l) => l.id === activeLessonId);
+  const activeCurriculum = activeLesson ? curriculumForLesson(activeLesson) : null;
+  const currentQuizQuestions = moduleAssessment?.questions ?? quizQuestions;
 
   useEffect(() => {
     onActiveLessonChange?.(introAccepted ? activeLessonId || null : null);
@@ -248,13 +277,88 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
     return next;
   };
 
-  const advanceToNextLesson = () => {
+  const recordConceptProgress = (questions: QuizQuestion[], answers: Record<number, number>) => {
+    const next = updateConceptProgress(conceptProgress, questions, answers);
+    setConceptProgress(next);
+    saveConceptProgress(next);
+    return next;
+  };
+
+  function isUnlocked(lesson: GuidedLesson, progress = completed) {
+    if (!lesson.prerequisites?.length) return true;
+    return lesson.prerequisites.every((r) => progress.includes(r));
+  }
+
+  const startModuleAssessment = (mod: GuidedModule) => {
+    const questions = buildFrameworkModuleAssessmentQuestions(mod.id, mod.lessons, completed, conceptProgress);
+    if (!questions.length) {
+      const next = markComplete(moduleAssessmentKey(mod.id));
+      advanceToNextLesson(next);
+      return;
+    }
+    setModuleAssessment({ moduleId: mod.id, moduleTitle: mod.title, questions, kind: "module" });
+    setPendingModuleSummaryId(null);
+    setShowQuiz(true);
+    setQuizQuestions([]);
+    setQuizAnswers({});
+    setQuizSubmitted(false);
+    setQuizPassed(false);
+    setQuizFeedback(null);
+    window.clearTimeout(quizAdvanceTimer.current);
+    quizAdvanceTimer.current = 0;
+  };
+
+  const shouldAssessModule = (lesson: GuidedLesson, progress: string[]) => {
+    const mod = modules.find((item) => item.id === lesson.moduleId);
+    if (!mod) return false;
+    const isLastLesson = mod.lessons[mod.lessons.length - 1]?.id === lesson.id;
+    const allLessonsDone = mod.lessons.every((item) => progress.includes(item.id));
+    return isLastLesson && allLessonsDone && !progress.includes(moduleAssessmentKey(mod.id));
+  };
+
+  const completeActiveLesson = () => {
+    if (!activeLesson) return;
+    const next = markComplete(activeLesson.id);
+    const mod = modules.find((item) => item.id === activeLesson.moduleId);
+    if (mod && shouldAssessModule(activeLesson, next)) {
+      setPendingModuleSummaryId(mod.id);
+      setShowQuiz(false);
+      setModuleAssessment(null);
+      return;
+    }
+    const cumulativeQuestions = buildCumulativeReviewQuestions(activeLesson, next, conceptProgress);
+    if (cumulativeQuestions.length) {
+      setModuleAssessment({ moduleId: `cumulative-${activeLesson.id}`, moduleTitle: "Cumulative review", questions: cumulativeQuestions, kind: "cumulative" });
+      setShowQuiz(true);
+      setQuizQuestions([]);
+      setQuizAnswers({});
+      setQuizSubmitted(false);
+      setQuizPassed(false);
+      setQuizFeedback(null);
+      return;
+    }
+    setShowQuiz(false);
+    setModuleAssessment(null);
+    advanceToNextLesson(next);
+  };
+
+  const completeModuleAssessment = () => {
+    if (!moduleAssessment) return;
+    const next = moduleAssessment.kind === "module"
+      ? markComplete(moduleAssessmentKey(moduleAssessment.moduleId))
+      : completed;
+    setShowQuiz(false);
+    setModuleAssessment(null);
+    advanceToNextLesson(next);
+  };
+
+  const advanceToNextLesson = (progress = completed) => {
     const lesson = guidedLessons.find((l) => l.id === activeLessonId);
     if (!lesson) return;
-    for (const mod of modules) {
-      const idx = mod.lessons.findIndex((l) => l.id === lesson.id);
-      if (idx >= 0 && idx < mod.lessons.length - 1) {
-        const nextLesson = mod.lessons[idx + 1];
+    const orderedLessons = modules.flatMap((mod) => mod.lessons);
+    const idx = orderedLessons.findIndex((item) => item.id === lesson.id);
+    for (const nextLesson of orderedLessons.slice(idx + 1)) {
+      if (isUnlocked(nextLesson, progress)) {
         handleSelectLesson(nextLesson.id);
         return;
       }
@@ -262,19 +366,16 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
   };
 
   const handleCloseQuiz = () => {
-    setShowQuiz(false);
-    setQuizFeedback(null);
     window.clearTimeout(quizAdvanceTimer.current);
     quizAdvanceTimer.current = 0;
-    if (activeLesson && quizPassed) {
-      markComplete(activeLesson.id);
-      advanceToNextLesson();
+    if (!quizPassed) {
+      setShowQuiz(false);
+      setQuizFeedback(null);
+      setModuleAssessment(null);
+      return;
     }
-  };
-
-  const isUnlocked = (lesson: GuidedLesson) => {
-    if (!lesson.prerequisites?.length) return true;
-    return lesson.prerequisites.every((r) => completed.includes(r));
+    if (moduleAssessment) completeModuleAssessment();
+    else completeActiveLesson();
   };
 
   const handleSelectLesson = (lessonId: string) => {
@@ -283,10 +384,13 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
     if (clearLessonAtoms) clearLessonAtoms();
     setStepIndex(0);
     setShowQuiz(false);
+    setQuizQuestions([]);
     setQuizAnswers({});
     setQuizSubmitted(false);
     setQuizPassed(false);
     setQuizFeedback(null);
+    setModuleAssessment(null);
+    setPendingModuleSummaryId(null);
     setAnimationRevision((value) => value + 1);
     window.clearTimeout(quizAdvanceTimer.current);
     quizAdvanceTimer.current = 0;
@@ -310,15 +414,17 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
     if (!addLessonAtom || !moveLessonAtom || !bondLessonAtoms || !addLessonParticles) return;
     const simTypes = new Set<LessonAnimationPart["type"]>(["clear", "spawn", "move", "bond", "particle"]);
     if (!animation.parts.some((part) => simTypes.has(part.type))) return;
-    if (!animation.loop && completedAnimationKeys.current.has(animationKey)) return;
+    const shouldClearBeforeCycle = animation.parts.some((part) => part.type === "spawn") && !animation.parts.some((part) => part.type === "clear");
 
     let completed = false;
     const timers: number[] = [];
     const runCycle = () => {
       let delay = 0;
+      if (shouldClearBeforeCycle) clearLessonAtoms?.();
       for (const part of animation.parts) {
         if (part.type === "wait") { delay += part.ms; continue; }
         if (!simTypes.has(part.type)) continue;
+        if (part.type === "bond") delay += 480;
         const timer = window.setTimeout(() => {
           if (part.type === "clear") clearLessonAtoms?.();
           else if (part.type === "spawn" && "symbol" in part) addLessonAtom(part.symbol, part.x, part.y);
@@ -327,7 +433,7 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
           else if (part.type === "particle" && "fromAtom" in part) addLessonParticles(part.fromAtom, part.toAtom, part.count, part.color);
         }, delay);
         timers.push(timer);
-        delay += 80;
+        delay += part.type === "bond" ? 240 : 80;
       }
       return delay;
     };
@@ -365,16 +471,20 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
     if (!activeLesson) return;
     if (stepIndex < activeLesson.steps.length - 1) {
       setStepIndex((p) => p + 1);
-    } else if (activeLesson.quizzes?.length) {
-      setShowQuiz(true);
-      setQuizAnswers({});
-      setQuizSubmitted(false);
-      setQuizPassed(false);
-      setQuizFeedback(null);
     } else {
-      markComplete(activeLesson.id);
+      const questions = buildLessonQuizQuestions(activeLesson, completed, conceptProgress);
+      if (questions.length) {
+        setQuizQuestions(questions);
+        setShowQuiz(true);
+        setQuizAnswers({});
+        setQuizSubmitted(false);
+        setQuizPassed(false);
+        setQuizFeedback(null);
+        setModuleAssessment(null);
+        return;
+      }
       setStepIndex(0);
-      advanceToNextLesson();
+      completeActiveLesson();
     }
   };
 
@@ -414,29 +524,74 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
   };
 
   const handleQuizSubmit = () => {
-    if (!activeLesson?.quizzes?.length) return;
+    if (!currentQuizQuestions.length) return;
     setQuizSubmitted(true);
-    const correctCount = activeLesson.quizzes.reduce(
+    recordConceptProgress(currentQuizQuestions, quizAnswers);
+    const correctCount = currentQuizQuestions.reduce(
       (score, quiz, i) => score + (quizAnswers[i] === quiz.correctIndex ? 1 : 0),
       0
     );
-    const allCorrect = correctCount === activeLesson.quizzes.length;
+    const allCorrect = correctCount === currentQuizQuestions.length;
     const allWrong = correctCount === 0;
     if (allCorrect) {
       setQuizPassed(true);
       setQuizFeedback("perfect");
       playQuizSuccessSound();
-      if (activeLesson) markComplete(activeLesson.id);
       window.clearTimeout(quizAdvanceTimer.current);
       quizAdvanceTimer.current = window.setTimeout(() => {
         quizAdvanceTimer.current = 0;
-        advanceToNextLesson();
+        if (moduleAssessment) completeModuleAssessment();
+        else completeActiveLesson();
       }, 2400);
     } else {
       setQuizPassed(false);
       setQuizFeedback(allWrong ? "zero" : null);
       if (allWrong) playQuizFailureSound();
     }
+  };
+
+  const startPendingModuleAssessment = () => {
+    if (!pendingModuleSummaryId) return;
+    const mod = modules.find((item) => item.id === pendingModuleSummaryId);
+    if (mod) startModuleAssessment(mod);
+  };
+
+  const continueAfterCumulativeReview = () => {
+    setShowQuiz(false);
+    setModuleAssessment(null);
+    setQuizFeedback(null);
+    advanceToNextLesson(completed);
+  };
+
+  const retryCurrentQuiz = () => {
+    setQuizAnswers({});
+    setQuizSubmitted(false);
+    setQuizPassed(false);
+    setQuizFeedback(null);
+    if (moduleAssessment?.kind === "module") {
+      const mod = modules.find((item) => item.id === moduleAssessment.moduleId);
+      if (mod) {
+        setModuleAssessment({
+          moduleId: mod.id,
+          moduleTitle: mod.title,
+          kind: "module",
+          questions: buildFrameworkModuleAssessmentQuestions(mod.id, mod.lessons, completed, conceptProgress)
+        });
+      }
+      return;
+    }
+    if (moduleAssessment?.kind === "cumulative" && activeLesson) {
+      setModuleAssessment({
+        ...moduleAssessment,
+        questions: buildCumulativeReviewQuestions(activeLesson, completed, conceptProgress)
+      });
+      return;
+    }
+    if (activeLesson) setQuizQuestions(buildLessonQuizQuestions(activeLesson, completed, conceptProgress));
+  };
+
+  const handleInlineRecallAnswer = (question: QuizQuestion, selected: number) => {
+    recordConceptProgress([question], { 0: selected });
   };
 
   return (
@@ -458,7 +613,11 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
         </div>
       )}
 
-      {introAccepted && activeLesson && !showQuiz && (
+      {introAccepted && pendingModuleSummaryId && !showQuiz && (
+        <ModuleSummaryCard moduleId={pendingModuleSummaryId} onStart={startPendingModuleAssessment} />
+      )}
+
+      {introAccepted && activeLesson && !showQuiz && !pendingModuleSummaryId && (
         <div className="lesson-content">
           <div className="lesson-progress">
             <div className="lesson-progress-bar"><i style={{ width: `${((stepIndex + 1) / activeLesson.steps.length) * 100}%` }} /></div>
@@ -469,7 +628,7 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
               <li key={stepIndex} className="current-step">{step.text}</li>
             ))}
           </ol>
-          <LessonStudyNote lesson={activeLesson} stepIndex={stepIndex} />
+          <LearningSurfaces lesson={activeLesson} stepIndex={stepIndex} completed={completed} progress={conceptProgress} onRecallAnswer={handleInlineRecallAnswer} />
           <div className="lesson-buttons">
             <button className="lesson-nav-btn" onClick={handlePrevStep} disabled={stepIndex <= 0}>
               <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Back
@@ -480,22 +639,23 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
               </button>
             )}
             <button className="lesson-nav-btn primary" onClick={handleNextStep}>
-              {stepIndex < activeLesson.steps.length - 1 ? "Next" : activeLesson.quizzes?.length ? "Quiz" : "Complete"} <ChevronRight size={15} />
+              {stepIndex < activeLesson.steps.length - 1 ? "Next" : "Quiz"} <ChevronRight size={15} />
             </button>
           </div>
         </div>
       )}
 
-      {introAccepted && showQuiz && activeLesson?.quizzes && (
+      {introAccepted && showQuiz && currentQuizQuestions.length > 0 && (
         <div className="lesson-quiz">
           {quizFeedback && <QuizFeedbackOverlay kind={quizFeedback} />}
-          <h3 style={{ margin: 0, fontSize: "1rem", color: "#ffffff" }}>Check your understanding</h3>
-          {activeLesson.quizzes.map((q, qi) => (
+          <h3 style={{ margin: 0, fontSize: "1rem", color: "#ffffff" }}>{moduleAssessment ? moduleAssessment.kind === "module" ? `${moduleAssessment.moduleTitle} assessment` : moduleAssessment.moduleTitle : "Check your understanding"}</h3>
+          {moduleAssessment && <p className="module-assessment-note">{moduleAssessment.kind === "module" ? "A short mixed review for the whole module. Question order is shuffled each time." : "A gentle spaced review from earlier lessons. You can continue after checking it."}</p>}
+          {currentQuizQuestions.map((q, qi) => (
             <QuizCard key={qi} question={q} index={qi} selected={quizAnswers[qi]} submitted={quizSubmitted} onSelect={(a) => setQuizAnswers((p) => ({ ...p, [qi]: a }))} />
           ))}
           <div className="quiz-actions" style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
             {!quizSubmitted ? (
-              <button className="quiz-submit" onClick={handleQuizSubmit} disabled={Object.keys(quizAnswers).length < activeLesson.quizzes.length} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 20px", border: "1px solid transparent", borderRadius: "8px", color: "#071412", background: "#5eead4", fontSize: "0.88rem", fontWeight: 900, cursor: "pointer" }}>Submit</button>
+              <button className="quiz-submit" onClick={handleQuizSubmit} disabled={Object.keys(quizAnswers).length < currentQuizQuestions.length} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 20px", border: "1px solid transparent", borderRadius: "8px", color: "#071412", background: "#5eead4", fontSize: "0.88rem", fontWeight: 900, cursor: "pointer" }}>Submit</button>
             ) : (
               <div className="quiz-result" style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center", width: "100%" }}>
                 {quizPassed ? (
@@ -504,7 +664,12 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
                   <p className="quiz-fail">Review incorrect answers above.</p>
                 )}
                 {!quizPassed ? (
-                  <button className="quiz-retry" onClick={() => { setQuizAnswers({}); setQuizSubmitted(false); setQuizPassed(false); setQuizFeedback(null); }} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 16px", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px", color: "#eef5f1", background: "transparent", fontSize: "0.85rem", fontWeight: 900, cursor: "pointer" }}>Retry</button>
+                  <>
+                    <button className="quiz-retry" onClick={retryCurrentQuiz} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 16px", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "8px", color: "#eef5f1", background: "transparent", fontSize: "0.85rem", fontWeight: 900, cursor: "pointer" }}>Retry</button>
+                    {moduleAssessment?.kind === "cumulative" && (
+                      <button className="quiz-continue" onClick={continueAfterCumulativeReview} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 16px", border: "1px solid transparent", borderRadius: "8px", color: "#071412", background: "#a7f3d0", fontSize: "0.85rem", fontWeight: 900, cursor: "pointer" }}>Continue</button>
+                    )}
+                  </>
                 ) : (
                   <button className="quiz-continue" onClick={handleCloseQuiz} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minHeight: "42px", padding: "0 16px", border: "1px solid transparent", borderRadius: "8px", color: "#071412", background: "#a7f3d0", fontSize: "0.85rem", fontWeight: 900, cursor: "pointer" }}>Continue</button>
                 )}
@@ -518,11 +683,12 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
         {modules.map((mod, mi) => {
           const moduleDone = mod.lessons.every((l) => completed.includes(l.id));
           const moduleProgress = mod.lessons.filter((l) => completed.includes(l.id)).length;
+          const assessmentDone = completed.includes(moduleAssessmentKey(mod.id));
           return (
             <div key={mi} className="guided-module">
               <div className="guided-module-title">
                 {mod.title}
-                <span className="guided-module-count">{moduleProgress}/{mod.lessons.length}{moduleDone ? <CheckCircle2 size={12} /> : ""}</span>
+                <span className="guided-module-count">{moduleProgress}/{mod.lessons.length}{moduleDone ? assessmentDone ? " + assessment" : " + review" : ""}{moduleDone && assessmentDone ? <CheckCircle2 size={12} /> : ""}</span>
               </div>
               <div className="lesson-list">
                 {mod.lessons.map((lesson) => {
@@ -551,77 +717,141 @@ function GuidedView({ activePresetId, onPreset, onSetAnnotations, onClearAnnotat
   );
 }
 
-type StudyNote = {
-  idea: string;
-  check: string;
-};
+const MODULE_ASSESSMENT_PREFIX = "module-assessment:";
 
-const lessonStudyNotes: Record<string, StudyNote[]> = {
-  "m01-welcome": [
-    { idea: "Matter is made from atoms. A molecule forms when atoms are connected by chemical bonds.", check: "Hydrogen is a useful first example because it has only one proton and one electron." },
-    { idea: "A proton is positive (+). An electron is negative (-). A neutral hydrogen atom has one of each, so the charges cancel.", check: "If hydrogen loses its electron, it becomes H+ because the positive proton is no longer balanced." },
-    { idea: "A covalent bond means atoms share electron density. H2 forms because two hydrogen atoms can share a pair of electrons.", check: "Each hydrogen atom becomes more stable because it is now near two electrons, called a duet." }
-  ],
-  "m01-parts": [
-    { idea: "The nucleus contains protons and neutrons. Protons are positive; neutrons are neutral and have no charge.", check: "Electrons are negative and occupy the space around the nucleus." },
-    { idea: "Electron shells are energy levels. The first shell fills with 2 electrons; the second shell can hold up to 8.", check: "Carbon has 6 electrons total: 2 in the first shell and 4 in the second shell." },
-    { idea: "Valence electrons are the outer-shell electrons. They are the electrons most involved in bonding.", check: "Carbon has 4 valence electrons, which is why it commonly forms 4 bonds." },
-    { idea: "Atomic number equals proton count. Mass number is protons plus neutrons.", check: "A neutral atom has the same number of protons and electrons, so the total charge is 0." }
-  ],
-  "m01-atomic-number": [
-    { idea: "Atomic number is the identity number of an element. Change the proton count and you change the element.", check: "Oxygen has atomic number 8 because every oxygen atom has 8 protons." },
-    { idea: "A neutral oxygen atom has 8 protons and 8 electrons. The +8 and -8 charges cancel.", check: "Neutrons add mass but not charge, so they do not affect whether the atom is neutral." },
-    { idea: "Mass number is protons plus neutrons. Oxygen-16 has 8 protons and 8 neutrons.", check: "Isotopes of oxygen still have 8 protons, but they can have different neutron counts." }
-  ],
-  "m01-isotopes": [
-    { idea: "The number of protons identifies the element. Hydrogen has 1 proton; helium has 2.", check: "Look at proton count first when naming the element." },
-    { idea: "Isotopes are versions of the same element with different neutron counts.", check: "Hydrogen-1 and hydrogen-2 are both hydrogen because both have 1 proton." }
-  ],
-  "m01-charge": [
-    { idea: "Neutral atoms have equal numbers of protons and electrons.", check: "3 protons and 3 electrons balance to net charge 0." },
-    { idea: "Ions form when electron count changes. Losing electrons makes a positive ion; gaining electrons makes a negative ion.", check: "Compare protons and electrons to decide the charge." }
-  ],
-  "m01-shells": [
-    { idea: "Electrons fill lower-energy shells first. Filled inner shells are usually not the main bonding electrons.", check: "Oxygen has 2 inner electrons and 6 valence electrons." },
-    { idea: "The valence shell controls many chemical properties because it is the outer shell that other atoms interact with.", check: "Oxygen tends to form 2 bonds because it has 6 valence electrons and is 2 short of an octet." }
-  ],
-  "m01-models": [
-    { idea: "The Bohr model is a simplified picture: electrons are drawn on circular energy shells.", check: "Use it when you want to count shells and valence electrons quickly." },
-    { idea: "Modern atomic theory uses orbitals and probability clouds. Electrons do not travel on exact planet-like paths.", check: "A denser cloud means a higher chance of finding an electron in that region." },
-    { idea: "Models are tools. A simple model can teach one idea well, while a more realistic model explains deeper behavior.", check: "Ask what question the model is trying to answer." }
-  ]
-};
+function moduleAssessmentKey(moduleId: string) {
+  return `${MODULE_ASSESSMENT_PREFIX}${moduleId}`;
+}
 
-const moduleStudyNotes: Record<string, StudyNote> = {
-  m01: { idea: "Atoms are organized by protons, neutrons, electrons, charge, and electron shells.", check: "Ask: what is in the nucleus, what is outside it, and is the atom neutral?" },
-  m02: { idea: "The periodic table groups elements by repeating valence-electron patterns.", check: "Ask: what column is the element in, and how many valence electrons does that suggest?" },
-  m03: { idea: "Atoms become more stable when their valence shell is full or closer to full.", check: "Ask: is the atom sharing, gaining, or losing electrons to reach stability?" },
-  m04: { idea: "Bond type depends on how electrons are shared, transferred, or pooled across atoms.", check: "Ask: are electrons shared equally, shared unequally, transferred, or mobile through a metal?" },
-  m05: { idea: "Electronegativity measures how strongly an atom pulls bonding electrons.", check: "Ask: does the molecule have polar bonds, and do the dipoles cancel?" },
-  m06: { idea: "VSEPR predicts shape by spacing electron regions as far apart as possible.", check: "Ask: how many bonding groups and lone pairs surround the central atom?" },
-  m07: { idea: "Intermolecular forces are attractions between molecules, not the strong bonds inside molecules.", check: "Ask: are the molecules nonpolar, polar, or capable of hydrogen bonding?" },
-  m08: { idea: "Reactions rearrange atoms by breaking old bonds and forming new ones.", check: "Ask: where does energy go when bonds break, and where is it released when bonds form?" },
-  m09: { idea: "Organic chemistry is mostly carbon framework chemistry plus functional groups.", check: "Ask: what is the carbon skeleton, and what functional groups are attached?" },
-  m10: { idea: "Real-world chemistry links molecular structure to observable properties and technology.", check: "Ask: how does the molecule's shape, polarity, or bonding explain the effect?" }
-};
+function ModuleSummaryCard({ moduleId, onStart }: { moduleId: string; onStart: () => void }) {
+  const summary = moduleSummaries[moduleId];
+  if (!summary) return null;
+  return (
+    <div className="module-summary-card">
+      <span className="learning-surface-label">Module summary</span>
+      <h3>{summary.title}</h3>
+      <p>{summary.overview}</p>
+      <ul>
+        {summary.takeaways.map((takeaway) => <li key={takeaway}>{takeaway}</li>)}
+      </ul>
+      <p className="module-summary-next">{summary.next}</p>
+      <button className="lesson-nav-btn primary" onClick={onStart}>Start module assessment <ChevronRight size={15} /></button>
+    </div>
+  );
+}
 
-function LessonStudyNote({ lesson, stepIndex }: { lesson: GuidedLesson; stepIndex: number }) {
-  const note = lessonStudyNotes[lesson.id]?.[stepIndex]
-    ?? lessonStudyNotes[lesson.id]?.[0]
-    ?? moduleStudyNotes[lesson.moduleId]
-    ?? { idea: lesson.focus, check: "Connect the visual model to the bonding rule being shown." };
+function LearningSurfaces({ lesson, stepIndex, completed, progress, onRecallAnswer }: {
+  lesson: GuidedLesson;
+  stepIndex: number;
+  completed: string[];
+  progress: Record<string, ConceptProgress>;
+  onRecallAnswer: (question: QuizQuestion, selected: number) => void;
+}) {
+  const curriculum = curriculumForLesson(lesson);
+  const objectives = objectivesForStep(lesson, stepIndex);
+  const concepts = conceptsForStep(lesson, stepIndex);
+  const completedKey = completed.join("|");
+  const recall = useMemo(
+    () => recallCandidatesForLesson(lesson, stepIndex, completed, progress)[0],
+    [lesson.id, stepIndex, completedKey]
+  );
 
   return (
-    <div className="lesson-study-note">
-      <div>
-        <strong>Key idea</strong>
-        <p>{note.idea}</p>
+    <div className="learning-surfaces">
+      <div className="lesson-bridge-grid">
+        <article className="learning-surface-card">
+          <span className="learning-surface-label">Before this lesson</span>
+          {curriculum.bridge.before.map((item) => <p key={item}>{item}</p>)}
+        </article>
+        <article className="learning-surface-card">
+          <span className="learning-surface-label">Today's goal</span>
+          <p>{curriculum.bridge.today}</p>
+        </article>
       </div>
-      <div>
-        <strong>Check yourself</strong>
-        <p>{note.check}</p>
+      <article className="learning-surface-card key">
+        <span className="learning-surface-label">Key idea</span>
+        <p>{curriculum.bridge.keyIdea}</p>
+        {objectives.length > 0 && (
+          <ul className="learning-objectives">
+            {objectives.map((objective) => <li key={objective.id}>{objective.text}</li>)}
+          </ul>
+        )}
+      </article>
+      {curriculum.bridge.commonMistake && (
+        <article className="learning-surface-card mistake">
+          <span className="learning-surface-label">Common mistake</span>
+          <p>{curriculum.bridge.commonMistake}</p>
+        </article>
+      )}
+      <div className="concept-chip-row">
+        {concepts.map((conceptId) => <span key={conceptId}>{conceptRegistry[conceptId]?.title ?? conceptId}</span>)}
       </div>
+      {recall && <InlineRecallCard question={recall} onAnswer={onRecallAnswer} />}
     </div>
+  );
+}
+
+function InlineRecallCard({ question, onAnswer }: { question: QuizQuestion; onAnswer: (question: QuizQuestion, selected: number) => void }) {
+  const [selected, setSelected] = useState<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [canReset, setCanReset] = useState(false);
+  const answerTimer = useRef<number>(0);
+  const isAnswered = selected !== null;
+  const isCorrect = selected === question.correctIndex;
+
+  useEffect(() => {
+    window.clearTimeout(answerTimer.current);
+    answerTimer.current = 0;
+    setSelected(null);
+    setAttempt(0);
+    setCanReset(false);
+    return () => {
+      window.clearTimeout(answerTimer.current);
+    };
+  }, [question.question]);
+
+  useEffect(() => {
+    if (!isAnswered) {
+      setCanReset(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setCanReset(true), 1300);
+    return () => window.clearTimeout(timer);
+  }, [isAnswered, isCorrect, attempt]);
+
+  return (
+    <article className={`inline-recall-card${isAnswered ? isCorrect ? " correct" : " wrong" : ""}`} data-attempt={attempt}>
+      <span className="learning-surface-label">Try recalling</span>
+      <p>{question.question}</p>
+      <div className="inline-recall-options">
+        {question.options.map((option, index) => (
+          <button
+            key={`${option}-${index}`}
+            className={isAnswered ? index === question.correctIndex ? "correct" : selected === index ? "wrong" : "" : ""}
+            disabled={isAnswered}
+            onClick={() => {
+              setSelected(index);
+              setAttempt((value) => value + 1);
+              playInlineRecallSound(index === question.correctIndex);
+              window.clearTimeout(answerTimer.current);
+              answerTimer.current = window.setTimeout(() => {
+                answerTimer.current = 0;
+                onAnswer(question, index);
+              }, 1100);
+            }}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+      {isAnswered && (
+        <div className="inline-recall-feedback">
+          <strong className={`inline-recall-result${isCorrect ? " correct" : " wrong"}`}>{isCorrect ? "Correct!" : "Try again."}</strong>
+          <small>{isCorrect ? "Nice recall. Lock that idea in, then reset when you're ready." : question.explanation}</small>
+          <button type="button" className="inline-recall-reset" disabled={!canReset} onClick={() => setSelected(null)}>Reset</button>
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -701,6 +931,37 @@ function findMoleculeMatches(q: string) {
 function createLessonAudioContext() {
   const AudioContextCtor = window.AudioContext ?? (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   return AudioContextCtor ? new AudioContextCtor() : null;
+}
+
+function playInlineRecallSound(correct: boolean) {
+  try {
+    const audio = createLessonAudioContext();
+    if (!audio) return;
+    const master = audio.createGain();
+    master.gain.setValueAtTime(correct ? 0.08 : 0.07, audio.currentTime);
+    master.connect(audio.destination);
+    const now = audio.currentTime;
+    const notes = correct ? [523.25, 659.25] : [196, 146.83];
+
+    notes.forEach((frequency, index) => {
+      const start = now + index * 0.075;
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      oscillator.type = correct ? "sine" : "triangle";
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(correct ? 0.32 : 0.24, start + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+      oscillator.connect(gain);
+      gain.connect(master);
+      oscillator.start(start);
+      oscillator.stop(start + 0.2);
+    });
+
+    window.setTimeout(() => void audio.close(), 420);
+  } catch {
+    // Keep the recall interaction usable even when the browser blocks audio.
+  }
 }
 
 function playQuizSuccessSound() {

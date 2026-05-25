@@ -1,6 +1,7 @@
 import { atomData } from "../data/atoms";
 import type { AtomParticle, AtomSymbol, Bond, ElectronEffect, HydrogenBond, MetallicElectron, MoleculePreset, SimulationSettings, SimulationState } from "../types";
 import { applyIonCharges, canBond, classifyBond, eventForBond, makeBond } from "./chemistry";
+import { applyNuclearDecay, hydrateAtomIsotope } from "./isotopes";
 import { applyMolecularRelaxation } from "./relaxation";
 import { applyVsepr3DTargets } from "./vsepr3d";
 
@@ -11,7 +12,7 @@ const idPart = () => `${Date.now().toString(36)}-${Math.random().toString(36).sl
 export function createAtom(symbol: AtomSymbol, x: number, y: number, guided = false): AtomParticle {
   const atom = atomData[symbol];
   if (!atom) throw new Error(`Unsupported atom symbol: ${symbol}`);
-  return {
+  return hydrateAtomIsotope({
     id: `${symbol}-${idPart()}`,
     symbol,
     x,
@@ -24,7 +25,7 @@ export function createAtom(symbol: AtomSymbol, x: number, y: number, guided = fa
     charge: 0,
     bonds: [],
     guided
-  };
+  });
 }
 
 export function createFreeState(width: number, height: number, settings: SimulationSettings): SimulationState {
@@ -36,6 +37,7 @@ export function createFreeState(width: number, height: number, settings: Simulat
     effects: [],
     metallicElectrons: [],
     events: [],
+    nuclearEvents: [],
     selectedAtomId: atoms[0]?.id ?? null,
     selectedBondId: null,
     time: 0,
@@ -142,6 +144,7 @@ export function createPresetState(width: number, height: number, preset: Molecul
       plain: preset.description,
       science: preset.science
     }],
+    nuclearEvents: [],
     selectedAtomId: atoms[0]?.id ?? null,
     selectedBondId: null,
     time: 0,
@@ -150,6 +153,19 @@ export function createPresetState(width: number, height: number, preset: Molecul
 }
 
 export function stepSimulation(state: SimulationState, settings: SimulationSettings, width: number, height: number, rawDt: number): SimulationState {
+  const multiplier = clamp(settings.timeMultiplier ?? 1, 1, 1000);
+  const scientificDt = rawDt * multiplier;
+  const visualMultiplier = Math.min(multiplier, settings.geometryMode === "rigid" ? 18 : 24);
+  const visualRawDt = rawDt * visualMultiplier;
+  const substeps = Math.min(8, Math.max(1, Math.ceil(visualRawDt / 0.04)));
+  let next = state;
+  for (let step = 0; step < substeps; step += 1) {
+    next = stepSimulationFrame(next, settings, width, height, visualRawDt / substeps, scientificDt / substeps);
+  }
+  return next;
+}
+
+function stepSimulationFrame(state: SimulationState, settings: SimulationSettings, width: number, height: number, rawDt: number, clockDt: number): SimulationState {
   const rigid = settings.geometryMode === "rigid";
   const worldBounds = {
     minX: -width * 1.25,
@@ -303,7 +319,7 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
   });
   const hydrogenBonds = state.metallicLattice ? [] : findHydrogenBonds(atoms, bonds);
 
-  return {
+  const nextBeforeDecay: SimulationState = {
     ...state,
     atoms,
     bonds,
@@ -311,8 +327,9 @@ export function stepSimulation(state: SimulationState, settings: SimulationSetti
     effects,
     metallicElectrons,
     events: events.slice(0, 8),
-    time: state.time + dt
+    time: state.time + clockDt
   };
+  return applyNuclearDecay(nextBeforeDecay, settings, clockDt);
 }
 
 function findHydrogenBonds(atoms: AtomParticle[], bonds: Bond[]): HydrogenBond[] {

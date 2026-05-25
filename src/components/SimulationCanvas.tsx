@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { atomData } from "../data/atoms";
-import { periodicElements } from "../data/periodicTable";
-import type { AtomParticle, AtomSymbol, Bond, CameraPreset, GraphicsQuality, LessonAnimationPart, SimulationSettings, SimulationState, ViewportAnnotation } from "../types";
+import { periodicElements, type PeriodicElementInfo } from "../data/periodicTable";
+import type { AtomParticle, AtomSymbol, Bond, CameraPreset, ElectronSource, ElectronTarget, GraphicsQuality, LessonAnimationPart, MechanismGesture, ReactionAction, ReactionPreview, SimulationSettings, SimulationState, ViewportAnnotation } from "../types";
 import { bondKindLabel } from "../simulation/chemistry";
 import { detectFunctionalGroups } from "../simulation/functionalGroups";
+import { isAtomRadioactive, resolveIsotope } from "../simulation/isotopes";
 
 type Props = {
   state: SimulationState;
@@ -14,6 +15,7 @@ type Props = {
   onSelectAtom: (id: string | null) => void;
   onSelectBond: (id: string | null) => void;
   onMoveAtom: (id: string, x: number, y: number, vx?: number, vy?: number) => void;
+  onDeleteAtom: (id: string) => void;
   onZoom: (zoom: number) => void;
   onCameraPreset: (preset: CameraPreset) => void;
   onToggle3D: () => void;
@@ -26,6 +28,20 @@ type Props = {
   lessonTotalSteps?: number;
   animParts?: LessonAnimationPart[];
   revealedCount?: number;
+  viewportOverlay?: ReactNode;
+  reactionPreview?: ReactionPreview | null;
+  electronSources?: ElectronSource[];
+  electronTargets?: ElectronTarget[];
+  selectedElectronSourceId?: string | null;
+  selectedElectronTargetId?: string | null;
+  onElectronSourceSelect?: (id: string | null) => void;
+  onElectronTargetSelect?: (id: string | null) => void;
+  onPreviewMechanism?: (gesture: MechanismGesture) => void;
+  onCommitMechanism?: (gesture: MechanismGesture) => void;
+  onPreviewReaction?: (action: ReactionAction) => void;
+  onCommitReaction?: (action: ReactionAction) => void;
+  onClearReactionPreview?: () => void;
+  onBondOrderShortcut?: (bondId: string, requestedOrder: 1 | 2 | 3) => void;
 };
 
 const devicePixelRatioSafe = (quality: GraphicsQuality) => Math.min(window.devicePixelRatio || 1, graphicsQualityProfile(quality).dprCap);
@@ -36,14 +52,16 @@ const originCamera: Camera2D = { x: 0, y: 0 };
 
 import { LessonOverlay } from "./LessonOverlay";
 
-export function SimulationCanvas({ state, settings, width, height, onResize, onSelectAtom, onSelectBond,     onMoveAtom, onZoom, onCameraPreset, onToggle3D, onFlingAtom, lessonAnnotations, highlightedAtomIds,
-  highlightedBondIds, lessonStepText, lessonStepIndex, lessonTotalSteps, animParts, revealedCount }: Props) {
+export function SimulationCanvas({ state, settings, width, height, onResize, onSelectAtom, onSelectBond,     onMoveAtom, onDeleteAtom, onZoom, onCameraPreset, onToggle3D, onFlingAtom, lessonAnnotations, highlightedAtomIds,
+  highlightedBondIds, lessonStepText, lessonStepIndex, lessonTotalSteps, animParts, revealedCount, viewportOverlay, reactionPreview, electronSources = [], electronTargets = [], selectedElectronSourceId = null,
+  selectedElectronTargetId = null, onElectronSourceSelect, onElectronTargetSelect, onPreviewMechanism, onCommitMechanism, onPreviewReaction, onCommitReaction, onClearReactionPreview, onBondOrderShortcut }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [panning, setPanning] = useState(false);
   const [camera, setCamera] = useState<Camera2D>(originCamera);
   const [hoveredBondId, setHoveredBondId] = useState<string | null>(null);
+  const [mechanismDragSourceId, setMechanismDragSourceId] = useState<string | null>(null);
   const lastDragPoint = useRef<{ x: number; y: number; time: number } | null>(null);
   const lastPanPoint = useRef<{ x: number; y: number } | null>(null);
   const lessonActive = Boolean(lessonAnnotations.length || animParts?.length);
@@ -73,8 +91,8 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    draw(ctx, state, settings, width, height, hoveredBondId, highlightedAtomIds, highlightedBondIds, activeCamera);
-  }, [height, hoveredBondId, settings, state, width, highlightedAtomIds, highlightedBondIds, activeCamera]);
+    draw(ctx, state, settings, width, height, hoveredBondId, highlightedAtomIds, highlightedBondIds, activeCamera, reactionPreview, electronSources, electronTargets, selectedElectronSourceId, selectedElectronTargetId);
+  }, [height, hoveredBondId, settings, state, width, highlightedAtomIds, highlightedBondIds, activeCamera, reactionPreview, electronSources, electronTargets, selectedElectronSourceId, selectedElectronTargetId]);
 
   const pointerScreenPoint = (event: PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -89,8 +107,32 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     return screenToWorld(point.x, point.y, width, height, settings.zoom, activeCamera);
   };
 
+  const directReactionActive = settings.directReactionMode && !lessonActive && Boolean(onPreviewReaction);
+  const makeGesture = (sourceId: string, targetId: string, mode: MechanismGesture["mode"]): MechanismGesture => ({
+    id: `canvas-${sourceId}-${targetId}-${Date.now()}`,
+    sourceId,
+    targetId,
+    mode
+  });
+
   const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
     const point = pointerPoint(event);
+    if (directReactionActive && settings.showMechanismHandles) {
+      const source = nearestElectronSource(electronSources, point.x, point.y, settings);
+      if (source) {
+        setMechanismDragSourceId(source.id);
+        onElectronSourceSelect?.(source.id);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
+      const target = nearestElectronTarget(electronTargets, point.x, point.y, settings);
+      if (target && selectedElectronSourceId) {
+        const gesture = makeGesture(selectedElectronSourceId, target.id, "click");
+        onElectronTargetSelect?.(target.id);
+        onPreviewMechanism?.(gesture);
+        return;
+      }
+    }
     const atom = nearestAtom(displayState.atoms, point.x, point.y);
     if (atom) {
       setDragging(atom.id);
@@ -102,6 +144,9 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     const bond = nearestBond(displayState.bonds, displayState.atoms, point.x, point.y);
     if (bond) {
       onSelectBond(bond.id);
+      if (directReactionActive && state.selectedBondId === bond.id) {
+        onPreviewReaction?.({ type: "break-bond", bondId: bond.id });
+      }
       return;
     }
     onSelectAtom(null);
@@ -113,7 +158,31 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     }
   };
 
+  const onDoubleClick = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (lessonActive) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const point = screenToWorld(event.clientX - rect.left, event.clientY - rect.top, width, height, settings.zoom, activeCamera);
+    const atom = nearestAtom(displayState.atoms, point.x, point.y);
+    if (!atom) return;
+    event.preventDefault();
+    setDragging(null);
+    setPanning(false);
+    lastDragPoint.current = null;
+    lastPanPoint.current = null;
+    onDeleteAtom(atom.id);
+  };
+
   const onPointerMove = (event: PointerEvent<HTMLCanvasElement>) => {
+    const point = pointerPoint(event);
+    if (mechanismDragSourceId) {
+      const target = nearestElectronTarget(electronTargets, point.x, point.y, settings);
+      if (target) {
+        const gesture = makeGesture(mechanismDragSourceId, target.id, "drag");
+        onElectronTargetSelect?.(target.id);
+        onPreviewMechanism?.(gesture);
+      }
+      return;
+    }
     if (panning && lastPanPoint.current) {
       const screen = pointerScreenPoint(event);
       const dx = (screen.x - lastPanPoint.current.x) / settings.zoom;
@@ -122,7 +191,6 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
       lastPanPoint.current = screen;
       return;
     }
-    const point = pointerPoint(event);
     if (!dragging) {
       setHoveredBondId(nearestBond(displayState.bonds, displayState.atoms, point.x, point.y)?.id ?? null);
       return;
@@ -132,6 +200,30 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
   };
 
   const onPointerUp = (event: PointerEvent<HTMLCanvasElement>) => {
+    const releasePoint = pointerPoint(event);
+    if (mechanismDragSourceId) {
+      const target = nearestElectronTarget(electronTargets, releasePoint.x, releasePoint.y, settings);
+      if (target) {
+        const gesture = makeGesture(mechanismDragSourceId, target.id, "drag");
+        onElectronTargetSelect?.(target.id);
+        onPreviewMechanism?.(gesture);
+      }
+      setMechanismDragSourceId(null);
+    }
+    if (directReactionActive && dragging) {
+      const sourceAtom = state.atoms.find((atom) => atom.id === dragging);
+      const targetAtom = nearestAtom(
+        displayState.atoms.filter((atom) => atom.id !== dragging),
+        releasePoint.x,
+        releasePoint.y
+      );
+      if (sourceAtom && targetAtom && !state.bonds.some((bond) => samePairCanvas(bond, sourceAtom.id, targetAtom.id))) {
+        const distance = Math.hypot(releasePoint.x - targetAtom.x, releasePoint.y - targetAtom.y);
+        if (distance < Math.max(92, sourceAtom.radius + targetAtom.radius + 34)) {
+          onPreviewReaction?.({ type: "form-bond", atomIds: [sourceAtom.id, targetAtom.id] });
+        }
+      }
+    }
     if (dragging && onFlingAtom && lastDragPoint.current) {
       const elapsed = Math.max(16, Date.now() - lastDragPoint.current.time);
       const screenToWorldScale = 1 / settings.zoom;
@@ -162,12 +254,57 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
     if (!canvas) return;
     const handleWheel = (event: globalThis.WheelEvent) => {
       event.preventDefault();
+      if (directReactionActive && event.shiftKey) {
+        const bondId = hoveredBondId ?? state.selectedBondId;
+        const bond = state.bonds.find((item) => item.id === bondId);
+        if (bond) {
+          const requested = clamp(bond.order + (event.deltaY > 0 ? -1 : 1), 1, 3) as 1 | 2 | 3;
+          onBondOrderShortcut?.(bond.id, requested);
+          return;
+        }
+      }
       const direction = event.deltaY > 0 ? -0.08 : 0.08;
       setZoom(settings.zoom + direction);
     };
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
-  }, [settings.zoom]);
+  }, [directReactionActive, hoveredBondId, onBondOrderShortcut, settings.zoom, state.bonds, state.selectedBondId]);
+
+  useEffect(() => {
+    if (!directReactionActive) return;
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClearReactionPreview?.();
+        setMechanismDragSourceId(null);
+        return;
+      }
+      if (event.key === "Enter" && reactionPreview?.allowed) {
+        event.preventDefault();
+        if (reactionPreview.mechanism) onCommitMechanism?.(reactionPreview.mechanism);
+        else onCommitReaction?.(reactionPreview.action);
+        return;
+      }
+      const selectedBond = state.selectedBondId ? state.bonds.find((bond) => bond.id === state.selectedBondId) : null;
+      if (!selectedBond) return;
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        onPreviewReaction?.({ type: "break-bond", bondId: selectedBond.id });
+        return;
+      }
+      if (event.key === "1" || event.key === "2" || event.key === "3") {
+        event.preventDefault();
+        onBondOrderShortcut?.(selectedBond.id, Number(event.key) as 1 | 2 | 3);
+        return;
+      }
+      if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        const requested = clamp(selectedBond.order + (event.key === "]" ? 1 : -1), 1, 3) as 1 | 2 | 3;
+        onBondOrderShortcut?.(selectedBond.id, requested);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [directReactionActive, onBondOrderShortcut, onClearReactionPreview, onCommitMechanism, onCommitReaction, onPreviewReaction, reactionPreview, state.bonds, state.selectedBondId]);
 
   return (
     <div className="simulation-wrap" ref={wrapRef}>
@@ -180,6 +317,7 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onPointerLeave={() => setHoveredBondId(null)}
+        onDoubleClick={onDoubleClick}
       />
       <LessonOverlay
         annotations={lessonAnnotations}
@@ -212,6 +350,18 @@ export function SimulationCanvas({ state, settings, width, height, onResize, onS
               {label}
             </button>
           ))}
+          <button title="Switch this viewport to the 3D molecule renderer." onClick={onToggle3D}>
+            3D View
+          </button>
+        </div>
+      )}
+      {viewportOverlay}
+      {directReactionActive && reactionPreview?.confirmRequired && (
+        <div className={`mechanism-confirm-pill ${reactionPreview.allowed ? "allowed" : "blocked"}`}>
+          <span>{reactionPreview.allowed ? "Preview ready" : "Blocked"} - {reactionPreview.message}</span>
+          <button type="button" disabled={!reactionPreview.allowed} onClick={() => reactionPreview.mechanism ? onCommitMechanism?.(reactionPreview.mechanism) : onCommitReaction?.(reactionPreview.action)}>Commit</button>
+          <button type="button" onClick={onClearReactionPreview}>Cancel</button>
+          <small>Enter commits, Esc cancels.</small>
         </div>
       )}
       <div className="canvas-readout">
@@ -237,7 +387,7 @@ function graphicsQualityProfile(quality: GraphicsQuality) {
   return { dprCap: 1.8 };
 }
 
-function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings, width: number, height: number, hoveredBondId: string | null, highlightedAtomIds: string[] = [], highlightedBondIds: string[] = [], camera: Camera2D = originCamera) {
+function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings, width: number, height: number, hoveredBondId: string | null, highlightedAtomIds: string[] = [], highlightedBondIds: string[] = [], camera: Camera2D = originCamera, reactionPreview?: ReactionPreview | null, electronSources: ElectronSource[] = [], electronTargets: ElectronTarget[] = [], selectedElectronSourceId: string | null = null, selectedElectronTargetId: string | null = null) {
   ctx.clearRect(0, 0, width, height);
   drawBackground(ctx, settings, width, height);
   if (state.metallicLattice && settings.visualStyle === "detailed") drawMetalElectronCloud(ctx, state, width, height, settings.zoom, camera);
@@ -257,12 +407,8 @@ function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: S
   const focusedAtoms = focusedIds ? visibleAtoms.filter((atom) => focusedIds.has(atom.id)) : visibleAtoms;
   if (shouldShowFunctionalGroups2D(settings, detailLevel)) drawFunctionalGroupHighlights2D(ctx, renderState, settings, detailLevel);
   for (const hBond of renderState.hydrogenBonds) drawHydrogenBond(ctx, renderState, hBond, settings);
-  for (const bond of dimmedBonds) drawBond(ctx, renderState, bond, settings, 0.18);
-  for (const bond of focusedBonds) drawBond(ctx, renderState, bond, settings);
-  if (settings.showBondTypes && detailLevel !== "abstract") {
-    for (const bond of dimmedBonds) drawBondTypeLabel(ctx, renderState, bond, settings, 0.16);
-    for (const bond of focusedBonds) drawBondTypeLabel(ctx, renderState, bond, settings);
-  }
+  for (const bond of dimmedBonds) drawBond(ctx, renderState, bond, settings, highlightedBondIds, 0.18);
+  for (const bond of focusedBonds) drawBond(ctx, renderState, bond, settings, highlightedBondIds);
   if (showChemistryDetail && settings.showElectronFlow) drawElectronFlow(ctx, renderState, settings, focusedIds);
   for (const electron of renderState.metallicElectrons) drawFreeElectron(ctx, electron.x, electron.y, settings);
   for (const effect of renderState.effects) drawEffect(ctx, renderState, effect, settings);
@@ -271,9 +417,264 @@ function draw(ctx: CanvasRenderingContext2D, state: SimulationState, settings: S
   if (settings.geometry3D) {
     for (const atom of frontBondedAtoms(renderState).filter((atom) => atomVisibleInMode2D(atom, settings))) drawAtom(ctx, atom, renderState, settings, highlightedAtomIds);
   }
+  if (settings.showDecayEffects) drawNuclearEvents2D(ctx, renderState, settings);
+  drawReactionOverlay2D(ctx, renderState, settings, reactionPreview);
+  if (settings.showMechanismHandles) drawElectronMechanismHandles2D(ctx, settings, electronSources, electronTargets, selectedElectronSourceId, selectedElectronTargetId);
+  if (settings.showBondTypes && detailLevel !== "abstract") {
+    for (const bond of dimmedBonds) drawBondTypeLabel(ctx, renderState, bond, settings, 0.3);
+    for (const bond of focusedBonds) drawBondTypeLabel(ctx, renderState, bond, settings);
+  }
   if (showChemistryDetail && settings.showNetDipole) drawNetDipole(ctx, renderState, settings);
   if (showChemistryDetail) drawBondAngleBadge(ctx, renderState, hoveredBondId ?? renderState.selectedBondId, settings);
   ctx.restore();
+  drawOffscreenAtomLabels2D(ctx, renderState, settings, width, height, camera, highlightedAtomIds);
+}
+
+function drawReactionOverlay2D(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings, preview?: ReactionPreview | null) {
+  if (!preview) return;
+  const atomById = new Map(state.atoms.map((atom) => [atom.id, atom]));
+  const bondById = new Map(state.bonds.map((bond) => [bond.id, bond]));
+  const zoom = Math.max(settings.zoom, 0.45);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  for (const bondId of preview.breakingBondIds) {
+    const bond = bondById.get(bondId);
+    if (!bond) continue;
+    const a = atomById.get(bond.a);
+    const b = atomById.get(bond.b);
+    if (!a || !b) continue;
+    const segment = visibleBondSegment(a, b);
+    if (!segment) continue;
+    ctx.save();
+    ctx.setLineDash([10 / zoom, 7 / zoom]);
+    ctx.strokeStyle = preview.allowed ? "rgba(248,113,113,0.92)" : "rgba(148,163,184,0.62)";
+    ctx.lineWidth = 4.6 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(segment.startX, segment.startY);
+    ctx.lineTo(segment.endX, segment.endY);
+    ctx.stroke();
+    if (settings.showLabels) drawReactionLabel2D(ctx, "BREAKING", (segment.startX + segment.endX) / 2, (segment.startY + segment.endY) / 2 - 16 / zoom, "#f87171", settings);
+    ctx.restore();
+  }
+
+  for (const ghost of preview.ghostBonds) {
+    const a = atomById.get(ghost.a);
+    const b = atomById.get(ghost.b);
+    const ghostPoint = !b && a ? ghostAtomPoint2D(a, state, settings) : null;
+    if (!a || (!b && !ghostPoint)) continue;
+    const end = b ?? ghostPoint!;
+    const segment = visibleBondSegment(a, end);
+    if (!segment) continue;
+    ctx.save();
+    ctx.setLineDash([7 / zoom, 6 / zoom]);
+    ctx.strokeStyle = preview.allowed ? "rgba(45,212,191,0.94)" : "rgba(251,191,36,0.88)";
+    ctx.lineWidth = (ghost.order === 1 ? 3.6 : ghost.order === 2 ? 5.2 : 6.4) / zoom;
+    ctx.shadowColor = preview.allowed ? "#2dd4bf" : "#fbbf24";
+    ctx.shadowBlur = settings.theme === "light" ? 0 : 9 / zoom;
+    ctx.beginPath();
+    ctx.moveTo(segment.startX, segment.startY);
+    ctx.lineTo(segment.endX, segment.endY);
+    ctx.stroke();
+    if (settings.showLabels) drawReactionLabel2D(ctx, ghost.label, (segment.startX + segment.endX) / 2, (segment.startY + segment.endY) / 2 + 18 / zoom, preview.allowed ? "#0f766e" : "#b45309", settings);
+    ctx.restore();
+  }
+
+  for (const arrow of preview.flowArrows) {
+    const from = atomById.get(arrow.fromAtomId);
+    const to = atomById.get(arrow.toAtomId);
+    if (!from) continue;
+    const color = arrow.tone === "break" ? "#f87171" : arrow.tone === "charge" ? "#f59e0b" : "#2dd4bf";
+    if (!to || from.id === to.id) {
+      drawCurvedSelfArrow2D(ctx, from, color, settings.showLabels ? arrow.label : "", settings);
+      continue;
+    }
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    const sx = from.x + dx / length * (from.radius + 14 / zoom);
+    const sy = from.y + dy / length * (from.radius + 14 / zoom);
+    const ex = to.x - dx / length * (to.radius + 18 / zoom);
+    const ey = to.y - dy / length * (to.radius + 18 / zoom);
+    drawArrow(ctx, sx, sy, ex, ey, color, 2.3 / zoom, settings.showLabels ? arrow.label : undefined, 0.82);
+  }
+
+  for (const atomId of preview.affectedAtomIds) {
+    const atom = atomById.get(atomId);
+    if (!atom) continue;
+    ctx.save();
+    ctx.strokeStyle = preview.allowed ? "rgba(45,212,191,0.72)" : "rgba(251,191,36,0.68)";
+    ctx.lineWidth = 2.4 / zoom;
+    ctx.setLineDash([5 / zoom, 5 / zoom]);
+    ctx.beginPath();
+    ctx.arc(atom.x, atom.y, atom.radius + 22 / zoom, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawElectronMechanismHandles2D(ctx: CanvasRenderingContext2D, settings: SimulationSettings, sources: ElectronSource[], targets: ElectronTarget[], selectedSourceId: string | null, selectedTargetId: string | null) {
+  const zoom = Math.max(settings.zoom, 0.45);
+  const advanced = settings.reactionToolMode === "advanced";
+  ctx.save();
+  ctx.font = `900 ${8 / zoom}px Inter, system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (const target of targets) {
+    if (!advanced && target.priority < 0.7 && target.id !== selectedTargetId) continue;
+    const r = (target.kind === "bond" ? 6 : 8) / zoom;
+    ctx.save();
+    ctx.globalAlpha = target.id === selectedTargetId ? 0.95 : target.acceptsElectrons ? 0.48 : 0.24;
+    ctx.strokeStyle = target.id === selectedTargetId ? "#2dd4bf" : "#60a5fa";
+    ctx.fillStyle = target.kind === "proton" ? "rgba(251,191,36,0.18)" : "rgba(96,165,250,0.12)";
+    ctx.lineWidth = target.id === selectedTargetId ? 2.2 / zoom : 1.2 / zoom;
+    ctx.setLineDash(target.acceptsElectrons ? [4 / zoom, 4 / zoom] : [2 / zoom, 5 / zoom]);
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, r + 6 / zoom, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  for (const source of sources) {
+    if (!advanced && source.kind !== "lone-pair" && source.kind !== "pi-bond" && source.id !== selectedSourceId) continue;
+    const selected = source.id === selectedSourceId;
+    const label = source.kind === "lone-pair" ? "LP" : source.kind === "pi-bond" ? "PI" : source.kind === "sigma-bond" ? "SIG" : source.kind === "formal-charge" ? "-" : "E";
+    const r = (selected ? 12 : 9) / zoom;
+    ctx.save();
+    ctx.globalAlpha = selected ? 1 : 0.78;
+    ctx.fillStyle = selected ? "#2dd4bf" : source.kind === "pi-bond" ? "#a78bfa" : source.kind === "sigma-bond" ? "#94a3b8" : "#5eead4";
+    ctx.strokeStyle = settings.theme === "light" ? "rgba(5,45,38,0.34)" : "rgba(255,255,255,0.42)";
+    ctx.lineWidth = 1.3 / zoom;
+    ctx.shadowColor = selected ? "#2dd4bf" : "transparent";
+    ctx.shadowBlur = selected ? 8 / zoom : 0;
+    ctx.beginPath();
+    ctx.arc(source.x, source.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = settings.theme === "light" ? "#05251f" : "#061512";
+    if (settings.showLabels) ctx.fillText(label, source.x, source.y + 0.3 / zoom);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawReactionLabel2D(ctx: CanvasRenderingContext2D, label: string, x: number, y: number, color: string, settings: SimulationSettings) {
+  const zoom = Math.max(settings.zoom, 0.45);
+  const fontSize = 8 / zoom;
+  const padX = 6 / zoom;
+  const padY = 3.5 / zoom;
+  ctx.save();
+  ctx.font = `950 ${fontSize}px Inter, system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const width = ctx.measureText(label).width + padX * 2;
+  ctx.fillStyle = settings.theme === "light" ? "rgba(255,255,255,0.88)" : "rgba(7,20,18,0.78)";
+  roundRect(ctx, x - width / 2, y - fontSize / 2 - padY, width, fontSize + padY * 2, 5 / zoom);
+  ctx.fill();
+  ctx.strokeStyle = hexToRgba(color, settings.theme === "light" ? 0.42 : 0.65);
+  ctx.lineWidth = 1 / zoom;
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.fillText(label, x, y + 0.5 / zoom);
+  ctx.restore();
+}
+
+function drawCurvedSelfArrow2D(ctx: CanvasRenderingContext2D, atom: AtomParticle, color: string, label: string, settings: SimulationSettings) {
+  const zoom = Math.max(settings.zoom, 0.45);
+  const r = atom.radius + 34 / zoom;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2.2 / zoom;
+  ctx.setLineDash([7 / zoom, 5 / zoom]);
+  ctx.beginPath();
+  ctx.arc(atom.x, atom.y, r, -0.2, Math.PI * 1.2);
+  ctx.stroke();
+  const endX = atom.x + Math.cos(Math.PI * 1.2) * r;
+  const endY = atom.y + Math.sin(Math.PI * 1.2) * r;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(endX, endY);
+  ctx.lineTo(endX + 9 / zoom, endY - 1 / zoom);
+  ctx.lineTo(endX + 4 / zoom, endY + 9 / zoom);
+  ctx.closePath();
+  ctx.fill();
+  if (settings.showLabels && label) drawReactionLabel2D(ctx, label.toUpperCase(), atom.x, atom.y - r - 11 / zoom, color, settings);
+  ctx.restore();
+}
+
+function ghostAtomPoint2D(atom: AtomParticle, state: SimulationState, settings: SimulationSettings): AtomParticle {
+  const neighbors = state.bonds
+    .filter((bond) => bond.a === atom.id || bond.b === atom.id)
+    .map((bond) => state.atoms.find((candidate) => candidate.id === (bond.a === atom.id ? bond.b : bond.a)))
+    .filter((candidate): candidate is AtomParticle => Boolean(candidate));
+  const baseAngle = neighbors.length
+    ? Math.atan2(atom.y - average(neighbors.map((item) => item.y)), atom.x - average(neighbors.map((item) => item.x)))
+    : -Math.PI / 2;
+  const distance = (atom.radius + 54) / Math.max(settings.zoom, 0.65);
+  return {
+    ...atom,
+    id: "ghost-H",
+    symbol: "H",
+    x: atom.x + Math.cos(baseAngle) * distance,
+    y: atom.y + Math.sin(baseAngle) * distance,
+    radius: Math.max(12, atom.radius * 0.56)
+  };
+}
+
+function drawOffscreenAtomLabels2D(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings, width: number, height: number, camera: Camera2D, highlightedAtomIds: string[]) {
+  const stickyIds = new Set([state.selectedAtomId, ...highlightedAtomIds].filter((id): id is string => Boolean(id)));
+  if (!settings.showOffscreenLabels && !stickyIds.size) return;
+  const targets = state.atoms.filter((atom) => settings.showOffscreenLabels || stickyIds.has(atom.id));
+  if (!targets.length) return;
+  ctx.save();
+  for (const atom of targets) {
+    const screen = worldToScreen(atom.x, atom.y, width, height, settings.zoom, camera);
+    const margin = 28;
+    if (screen.x > margin && screen.x < width - margin && screen.y > margin && screen.y < height - margin) continue;
+    const clampedX = clamp(screen.x, 16, width - 16);
+    const clampedY = clamp(screen.y, 16, height - 16);
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const angle = Math.atan2(screen.y - centerY, screen.x - centerX);
+    const arrowX = clampedX - Math.cos(angle) * 8;
+    const arrowY = clampedY - Math.sin(angle) * 8;
+    const data = atomData[atom.symbol];
+    const label = settings.showElementNames2D ? `${data.name} (${atom.symbol})` : atom.symbol;
+    ctx.strokeStyle = settings.theme === "light" ? "rgba(13,148,136,0.58)" : "rgba(94,234,212,0.7)";
+    ctx.fillStyle = settings.theme === "light" ? "rgba(255,255,255,0.92)" : "rgba(7,20,18,0.88)";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(clampedX, clampedY);
+    ctx.lineTo(arrowX - Math.cos(angle) * 18, arrowY - Math.sin(angle) * 18);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(clampedX, clampedY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = "900 11px Inter, system-ui, sans-serif";
+    ctx.textAlign = clampedX > width - 44 ? "right" : clampedX < 44 ? "left" : "center";
+    ctx.textBaseline = "middle";
+    const textWidth = Math.min(128, ctx.measureText(label).width + 14);
+    const textX = clamp(clampedX, 12 + textWidth / 2, width - 12 - textWidth / 2);
+    const textY = clamp(clampedY + (clampedY < 36 ? 18 : -18), 18, height - 18);
+    roundRect(ctx, textX - textWidth / 2, textY - 11, textWidth, 22, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = settings.theme === "light" ? "#0f766e" : "#99f6e4";
+    ctx.fillText(label, textX, textY + 0.5, textWidth - 10);
+  }
+  ctx.restore();
+}
+
+function average(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -609,6 +1010,7 @@ function palette(settings: SimulationSettings) {
     covalent: light ? "#334155" : "#e5e7eb",
     polar: light ? "#2563eb" : "#38bdf8",
     ionic: light ? "#c2410c" : "#f59e0b",
+    coordinate: light ? "#7c3aed" : "#c084fc",
     metallic: light ? "rgba(161,98,7,0.34)" : "rgba(251,191,36,0.2)",
     electron: settings.electronColor2D,
     freeElectron: light ? "#0284c7" : "#67e8f9",
@@ -749,23 +1151,34 @@ function drawFadingFloor(ctx: CanvasRenderingContext2D, settings: SimulationSett
   ctx.restore();
 }
 
-function drawBond(ctx: CanvasRenderingContext2D, state: SimulationState, bond: Bond, settings: SimulationSettings, alpha = 1) {
+function drawBond(ctx: CanvasRenderingContext2D, state: SimulationState, bond: Bond, settings: SimulationSettings, highlightedBondIds: string[] = [], alpha = 1) {
   const a = state.atoms.find((atom) => atom.id === bond.a);
   const b = state.atoms.find((atom) => atom.id === bond.b);
   if (!a || !b) return;
   const segment = visibleBondSegment(a, b);
   if (!segment) return;
   const colors = palette(settings);
-  const color = bond.kind === "ionic" ? colors.ionic : bond.kind === "metallic" ? colors.metallic : bond.kind === "polar-covalent" ? colors.polar : colors.covalent;
+  const color = bond.kind === "ionic" ? colors.ionic : bond.kind === "coordinate" ? colors.coordinate : bond.kind === "metallic" ? colors.metallic : bond.kind === "polar-covalent" ? colors.polar : colors.covalent;
   const offsets = bond.kind === "metallic" ? [0] : bond.order === 1 ? [0] : bond.order === 2 ? [-5, 5] : [-8, 0, 8];
   const depth = settings.geometry3D ? clamp(1 + (((a.z ?? 0) + (b.z ?? 0)) / 2) / 520, 0.68, 1.28) : 1;
   const depthAlpha = settings.geometry3D ? clamp(0.58 + (((a.z ?? 0) + (b.z ?? 0)) / 2 + 260) / 720, 0.46, 1) : 1;
   const chemistryDetail = settings.analysisMode === "chemistry" && detailLevelFor2D(settings) === "detail";
+  const selected = state.selectedBondId === bond.id;
+  const highlighted = selected || highlightedBondIds.includes(bond.id);
 
   ctx.save();
   ctx.lineCap = "round";
   ctx.shadowColor = color;
-  ctx.shadowBlur = settings.geometry3D && isDetailed(settings) && bond.kind !== "metallic" ? 6 : 0;
+  ctx.shadowBlur = highlighted ? 14 : settings.geometry3D && isDetailed(settings) && bond.kind !== "metallic" ? 6 : 0;
+  if (highlighted) {
+    ctx.beginPath();
+    ctx.moveTo(segment.startX, segment.startY);
+    ctx.lineTo(segment.endX, segment.endY);
+    ctx.strokeStyle = selected ? "#facc15" : "#5eead4";
+    ctx.globalAlpha = clamp(alpha * 0.74, 0.18, 0.92);
+    ctx.lineWidth = (bond.kind === "metallic" ? 8 : 10.5) * depth;
+    ctx.stroke();
+  }
   for (const offset of offsets) {
     ctx.beginPath();
     ctx.moveTo(segment.startX + segment.px * offset, segment.startY + segment.py * offset);
@@ -774,6 +1187,7 @@ function drawBond(ctx: CanvasRenderingContext2D, state: SimulationState, bond: B
     ctx.globalAlpha = depthAlpha * alpha;
     ctx.lineWidth = (bond.kind === "metallic" ? 1 : 3.4) * depth;
     if (bond.kind === "ionic") ctx.setLineDash([7, 7]);
+    if (bond.kind === "coordinate") ctx.setLineDash([12, 4, 2, 4]);
     ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -793,7 +1207,7 @@ function drawBondTypeLabel(ctx: CanvasRenderingContext2D, state: SimulationState
   if (!a || !b) return;
   const segment = visibleBondSegment(a, b);
   if (!segment) return;
-  const label = bondKindLabel[bond.kind].toUpperCase();
+  const label = `${bondKindLabel[bond.kind].toUpperCase()} / ORDER ${bond.order}`;
   const zoom = Math.max(settings.zoom, 0.45);
   const fontSize = 7.5 / zoom;
   const padX = 5 / zoom;
@@ -818,7 +1232,9 @@ function drawBondTypeLabel(ctx: CanvasRenderingContext2D, state: SimulationState
   ctx.stroke();
   ctx.fillStyle = bond.kind === "ionic"
     ? colors.ionic
-    : bond.kind === "metallic"
+    : bond.kind === "coordinate"
+      ? colors.coordinate
+      : bond.kind === "metallic"
       ? colors.metallic
       : bond.kind === "polar-covalent"
         ? colors.polar
@@ -1159,6 +1575,26 @@ function drawAtom(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: Simu
     ctx.restore();
   }
 
+  if (settings.showIsotopeLabels && (selected || lessonHighlighted || isAtomRadioactive(atom))) {
+    const isotope = resolveIsotope(atom);
+    const text = isotope.label;
+    const badgeY = atom.y - atom.radius - 28;
+    ctx.save();
+    ctx.font = "800 10px Inter, system-ui";
+    const badgeW = Math.max(34, ctx.measureText(text).width + 12);
+    ctx.fillStyle = settings.theme === "light" ? "rgba(255,255,255,0.88)" : "rgba(15,23,42,0.78)";
+    ctx.strokeStyle = isotope.stable ? "rgba(45,212,191,0.72)" : "rgba(250,204,21,0.92)";
+    ctx.lineWidth = 1.2;
+    roundRect(ctx, atom.x - badgeW / 2, badgeY - 10, badgeW, 20, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = isotope.stable ? colors.label : "#a16207";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, atom.x, badgeY);
+    ctx.restore();
+  }
+
   if (shouldShowAtomLabel2D(atom, state, settings)) {
     ctx.fillStyle = colors.label;
     ctx.font = "700 11px Inter, system-ui";
@@ -1182,7 +1618,7 @@ function drawElementSignature(ctx: CanvasRenderingContext2D, atom: AtomParticle,
     ctx.arc(atom.x, atom.y, atom.radius + 20 + pulse * 3, 0, Math.PI * 2);
     ctx.stroke();
   }
-  if (isRadioactiveLike(atom.symbol, data.atomicNumber)) {
+  if (settings.showDecayEffects && isAtomRadioactive(atom)) {
     drawRadioactiveSignature(ctx, atom, time, settings);
   }
   if (data.group === "alkali-metals" && atom.symbol !== "H") {
@@ -1232,6 +1668,46 @@ function drawRadioactiveSignature(ctx: CanvasRenderingContext2D, atom: AtomParti
   ctx.beginPath();
   ctx.arc(0, 0, radius * 0.16, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
+
+function drawNuclearEvents2D(ctx: CanvasRenderingContext2D, state: SimulationState, settings: SimulationSettings) {
+  if (!state.nuclearEvents?.length) return;
+  const atomById = new Map(state.atoms.map((atom) => [atom.id, atom]));
+  const visualWindow = Math.max(4, settings.timeMultiplier * 0.2);
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const event of state.nuclearEvents.slice(0, 6)) {
+    const atom = atomById.get(event.atomId);
+    const x = atom?.x ?? event.x;
+    const y = atom?.y ?? event.y;
+    const age = Math.max(0, state.time - event.time);
+    const progress = clamp(age / visualWindow, 0, 1);
+    if (progress >= 1) continue;
+    const pulse = 1 - progress;
+    const radius = (atom?.radius ?? 28) + 24 + progress * 62;
+    ctx.globalAlpha = pulse * (settings.theme === "light" ? 0.5 : 0.62);
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = pulse * 0.9;
+    ctx.fillStyle = settings.theme === "light" ? "rgba(255,255,255,0.92)" : "rgba(15,23,42,0.82)";
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 1;
+    const label = `${event.fromLabel} -> ${event.toLabel}`;
+    const width = Math.max(82, ctx.measureText(label).width + 18);
+    roundRect(ctx, x - width / 2, y - radius - 24, width, 22, 11);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = settings.theme === "light" ? "#854d0e" : "#fde68a";
+    ctx.font = "800 10px Inter, system-ui";
+    ctx.fillText(label, x, y - radius - 13);
+  }
   ctx.restore();
 }
 
@@ -1292,7 +1768,7 @@ function drawElectronShellStructure(ctx: CanvasRenderingContext2D, atom: AtomPar
     return;
   }
   if (settings.atomicModel2D === "spdf") {
-    drawSpdfModel(ctx, atom, state, settings, depthAlpha, fullDetail);
+    drawSpdfModel(ctx, atom, state, settings, depthAlpha, fullDetail, emphasized);
     ctx.restore();
     return;
   }
@@ -1504,109 +1980,111 @@ function drawPlanetaryElectronTrail(ctx: CanvasRenderingContext2D, x: number, y:
   ctx.restore();
 }
 
-function drawSpdfModel(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: SimulationState, settings: SimulationSettings, depthAlpha: number, fullDetail: boolean) {
+function drawSpdfModel(ctx: CanvasRenderingContext2D, atom: AtomParticle, state: SimulationState, settings: SimulationSettings, depthAlpha: number, fullDetail: boolean, emphasized: boolean) {
   const element = periodicElementBySymbol.get(atom.symbol);
   const subshells = parseSubshellConfiguration(element?.electronConfiguration ?? "");
-  if (!subshells.length) return;
+  const shellGroups = shellGroupsForElement(element?.shells, subshells);
+  if (!shellGroups.length) return;
 
   const shellExpansion = clamp(settings.shellSpacing2D, 0, 1);
-  const mainGap = 19 + shellExpansion * 23;
-  const subGap = 6.5 + shellExpansion * 5.5;
-  const firstRadius = atom.radius + 17 + shellExpansion * 4;
-  const shellGroups = groupSubshellsByShell(subshells);
-  const shellRadiiByN = new Map<number, { inner: number; outer: number; electrons: number }>();
-  const perShellSeen = new Map<number, number>();
+  const mainGap = 21 + shellExpansion * 34;
+  const firstRadius = atom.radius + 19;
 
-  for (const sub of subshells) {
-    const subIndex = perShellSeen.get(sub.n) ?? 0;
-    perShellSeen.set(sub.n, subIndex + 1);
-    const radius = firstRadius + (sub.n - 1) * mainGap + subIndex * subGap;
-    const currentShell = shellRadiiByN.get(sub.n);
-    shellRadiiByN.set(sub.n, {
-      inner: currentShell ? Math.min(currentShell.inner, radius) : radius,
-      outer: currentShell ? Math.max(currentShell.outer, radius) : radius,
-      electrons: (currentShell?.electrons ?? 0) + sub.electrons
-    });
-    const color = subshellColor(sub.kind);
+  for (const group of shellGroups) {
+    const radius = firstRadius + (group.n - 1) * mainGap;
+    const color = shellGroupColor(group.n);
     ctx.globalAlpha = clamp(settings.shellOpacity2D * depthAlpha, 0.1, 0.9);
-    ctx.strokeStyle = hexToRgba(color, subIndex === 0 ? 0.78 : 0.58);
-    ctx.lineWidth = sub.kind === "s" ? 1.5 : 1.12;
-    ctx.setLineDash(sub.kind === "s" ? [] : sub.kind === "p" ? [8, 4] : sub.kind === "d" ? [3, 4] : [2, 6]);
+    ctx.strokeStyle = hexToRgba(color, 0.72);
+    ctx.lineWidth = 1.65 / Math.max(settings.zoom, 0.6);
+    ctx.setLineDash([]);
     ctx.beginPath();
     ctx.arc(atom.x, atom.y, radius, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.setLineDash([]);
 
-    const showElectrons = fullDetail || sub.n >= Math.max(1, Math.max(...subshells.map((item) => item.n)) - 1);
-    if (showElectrons) drawSubshellElectrons(ctx, atom.x, atom.y, radius, sub.electrons, color, state.time, settings, sub.n, subIndex);
-    if (fullDetail || settings.zoom >= 1.05 || sub.n >= Math.max(1, Math.max(...subshells.map((item) => item.n)) - 2)) {
-      drawSubshellBadge(ctx, atom.x, atom.y, radius, sub, subIndex, settings, depthAlpha);
-    }
+    drawMainShellBand(ctx, atom.x, atom.y, radius - 3.5, radius + 3.5, group.n, color, settings, depthAlpha);
+    drawShellGroupElectrons(ctx, atom.x, atom.y, radius, group.electrons, color, state.time, settings, group.n);
+    if (fullDetail || emphasized || settings.zoom >= 1.05) drawSpdfShellLeader(ctx, atom.x, atom.y, radius, group, color, settings, depthAlpha);
   }
 
-  for (const group of shellGroups) {
-    const shellRadii = shellRadiiByN.get(group.n);
-    if (!shellRadii) continue;
-    drawMainShellBand(ctx, atom.x, atom.y, shellRadii.inner - subGap * 0.62, shellRadii.outer + subGap * 0.62, group.n, settings, depthAlpha);
-    drawSpdfShellLabel(ctx, atom.x, atom.y, shellRadii.outer, group, settings, depthAlpha);
-  }
-
-  if (fullDetail || settings.zoom >= 1.25) drawSpdfConfigPanel(ctx, atom, element?.electronConfiguration ?? "", subshells, settings, depthAlpha);
+  if (fullDetail || emphasized || settings.zoom >= 1.25) drawSpdfShellCount(ctx, atom, shellGroups, settings, depthAlpha);
 }
 
-function drawSubshellElectrons(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, count: number, color: string, time: number, settings: SimulationSettings, shell: number, subIndex: number) {
-  const visibleCount = Math.min(count, 14);
+function drawShellGroupElectrons(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, count: number, color: string, time: number, settings: SimulationSettings, shell: number) {
+  const visibleCount = Math.min(count, 32);
+  const electronRadius = count > 18 ? 1.35 : count > 8 ? 1.7 : 2.05;
   ctx.fillStyle = hexToRgba(color, settings.electronOpacity2D * 0.92);
   ctx.strokeStyle = hexToRgba(color, settings.electronOpacity2D * 0.46);
   for (let i = 0; i < visibleCount; i += 1) {
-    const angle = time * (0.2 + shell * 0.025 + subIndex * 0.02) + i * (Math.PI * 2 / visibleCount);
+    const angle = time * (0.16 + shell * 0.025) + i * (Math.PI * 2 / visibleCount);
     const wobble = Math.sin(time * 1.2 + i + shell) * 0.8;
     ctx.beginPath();
-    ctx.arc(x + Math.cos(angle) * (radius + wobble), y + Math.sin(angle) * (radius + wobble), count > 10 ? 1.55 : 2.05, 0, Math.PI * 2);
+    ctx.arc(x + Math.cos(angle) * (radius + wobble), y + Math.sin(angle) * (radius + wobble), electronRadius, 0, Math.PI * 2);
     ctx.fill();
   }
 }
 
-function drawMainShellBand(ctx: CanvasRenderingContext2D, x: number, y: number, innerRadius: number, outerRadius: number, shell: number, settings: SimulationSettings, depthAlpha: number) {
+function drawMainShellBand(ctx: CanvasRenderingContext2D, x: number, y: number, innerRadius: number, outerRadius: number, shell: number, color: string, settings: SimulationSettings, depthAlpha: number) {
   if (outerRadius <= 0) return;
   ctx.save();
   ctx.globalAlpha = clamp(settings.shellOpacity2D * depthAlpha, 0.035, 0.16);
-  ctx.strokeStyle = settings.theme === "light" ? "#0f766e" : "#ccfbf1";
+  ctx.strokeStyle = hexToRgba(color, 0.72);
   ctx.lineWidth = Math.max(1, outerRadius - Math.max(0, innerRadius));
   ctx.setLineDash([]);
   ctx.beginPath();
   ctx.arc(x, y, Math.max(0, (innerRadius + outerRadius) / 2), 0, Math.PI * 2);
   ctx.stroke();
-  ctx.globalAlpha = clamp(settings.shellOpacity2D * depthAlpha, 0.08, 0.34);
+  ctx.globalAlpha = clamp(settings.shellOpacity2D * depthAlpha, 0.07, 0.24);
   ctx.lineWidth = 0.8 / Math.max(settings.zoom, 0.6);
-  ctx.setLineDash([2 / Math.max(settings.zoom, 0.6), 7 / Math.max(settings.zoom, 0.6)]);
+  ctx.strokeStyle = hexToRgba(color, 0.48);
+  ctx.setLineDash([2 / Math.max(settings.zoom, 0.6), 8 / Math.max(settings.zoom, 0.6)]);
   ctx.beginPath();
-  ctx.arc(x, y, outerRadius, 0, Math.PI * 2);
+  ctx.arc(x, y, outerRadius + shell * 0.35, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 }
 
-function drawSpdfShellLabel(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, group: ShellGroup, settings: SimulationSettings, depthAlpha: number) {
+function drawSpdfShellLeader(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, group: ShellGroup, color: string, settings: SimulationSettings, depthAlpha: number) {
   const zoom = Math.max(settings.zoom, 0.6);
-  const angle = -Math.PI * 0.76 + group.n * 0.18;
-  const lx = x + Math.cos(angle) * (radius + 18 / zoom);
-  const ly = y + Math.sin(angle) * (radius + 18 / zoom);
-  const text = `n=${group.n} ${shellName(group.n)} SHELL`;
-  const subText = `${group.electrons} e-`;
-  drawSpdfBadge(ctx, lx, ly, text, subText, settings.theme === "light" ? "#0f766e" : "#5eead4", settings, depthAlpha, "shell");
+  const labelScale = clamp(settings.spdfLabelScale2D, 0.75, 2.4);
+  const fontSize = 9 * labelScale / zoom;
+  const angle = -0.2 + (group.n - 4) * 0.075;
+  const shellX = x + Math.cos(angle) * radius;
+  const shellY = y + Math.sin(angle) * radius;
+  const labelX = x + Math.cos(angle) * (radius + (24 + labelScale * 4) / zoom);
+  const labelY = y + Math.sin(angle) * (radius + (24 + labelScale * 4) / zoom);
+  ctx.save();
+  ctx.globalAlpha = clamp(depthAlpha, 0.32, 0.9);
+  ctx.strokeStyle = hexToRgba(color, 0.6);
+  ctx.lineWidth = 1 / zoom;
+  ctx.beginPath();
+  ctx.moveTo(shellX, shellY);
+  ctx.lineTo(labelX - Math.cos(angle) * 7 / zoom, labelY - Math.sin(angle) * 7 / zoom);
+  ctx.stroke();
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = `900 ${fontSize}px Inter, system-ui`;
+  ctx.fillStyle = color;
+  ctx.fillText(`n=${group.n} ${shellName(group.n)}: ${group.electrons} e-`, labelX, labelY);
+  ctx.restore();
 }
 
-function drawSubshellBadge(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, sub: SubshellOccupancy, subIndex: number, settings: SimulationSettings, depthAlpha: number) {
+function drawSpdfShellCount(ctx: CanvasRenderingContext2D, atom: AtomParticle, shellGroups: ShellGroup[], settings: SimulationSettings, depthAlpha: number) {
   const zoom = Math.max(settings.zoom, 0.6);
-  const angle = -0.52 + subIndex * 0.2 + sub.n * 0.035;
-  const lx = x + Math.cos(angle) * (radius + 14 / zoom);
-  const ly = y + Math.sin(angle) * (radius + 14 / zoom);
-  drawSpdfBadge(ctx, lx, ly, `${sub.n}${sub.kind}${sub.electrons}`, `${sub.kind.toUpperCase()} SUBSHELL`, subshellColor(sub.kind), settings, depthAlpha, "subshell");
+  const labelScale = clamp(settings.spdfLabelScale2D, 0.75, 2.4);
+  const text = shellGroups.map((group) => `${group.n}:${group.electrons}`).join("  ");
+  ctx.save();
+  ctx.globalAlpha = clamp(depthAlpha, 0.34, 0.82);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `850 ${9 * labelScale / zoom}px Inter, system-ui`;
+  ctx.fillStyle = settings.theme === "light" ? "rgba(32,48,42,0.7)" : "rgba(238,245,241,0.7)";
+  ctx.fillText(`Shell electrons  ${text}`, atom.x, atom.y + atom.radius + (32 + labelScale * 2) / zoom);
+  ctx.restore();
 }
 
 function drawSpdfConfigPanel(ctx: CanvasRenderingContext2D, atom: AtomParticle, configuration: string, subshells: SubshellOccupancy[], settings: SimulationSettings, depthAlpha: number) {
   const zoom = Math.max(settings.zoom, 0.6);
-  const panelW = 238 / zoom;
+  const panelW = 252 / zoom;
   const lineH = 15 / zoom;
   const pad = 9 / zoom;
   const rows = compactShellSummary(subshells);
@@ -1644,12 +2122,11 @@ function drawSpdfBadge(
   subText: string,
   color: string,
   settings: SimulationSettings,
-  depthAlpha: number,
-  tone: "shell" | "subshell"
+  depthAlpha: number
 ) {
   const zoom = Math.max(settings.zoom, 0.6);
-  const fontMain = tone === "shell" ? 8.8 / zoom : 8 / zoom;
-  const fontSub = 6.5 / zoom;
+  const fontMain = 8.8 / zoom;
+  const fontSub = 7.2 / zoom;
   const padX = 7 / zoom;
   const padY = 4 / zoom;
   ctx.save();
@@ -1657,10 +2134,8 @@ function drawSpdfBadge(
   ctx.font = `950 ${fontMain}px Inter, system-ui`;
   const width = Math.max(ctx.measureText(text).width, ctx.measureText(subText).width) + padX * 2;
   const height = fontMain + fontSub + padY * 2 + 2 / zoom;
-  ctx.fillStyle = tone === "shell"
-    ? settings.theme === "light" ? "rgba(240,253,250,0.9)" : "rgba(6,22,20,0.84)"
-    : settings.theme === "light" ? "rgba(255,255,255,0.78)" : "rgba(7,12,11,0.7)";
-  ctx.strokeStyle = hexToRgba(color, tone === "shell" ? 0.58 : 0.42);
+  ctx.fillStyle = settings.theme === "light" ? "rgba(255,255,255,0.82)" : "rgba(7,12,11,0.7)";
+  ctx.strokeStyle = hexToRgba(color, 0.5);
   ctx.lineWidth = 1 / zoom;
   roundRect(ctx, cx - width / 2, cy - height / 2, width, height, 6 / zoom);
   ctx.fill();
@@ -1675,10 +2150,169 @@ function drawSpdfBadge(
   ctx.restore();
 }
 
+function drawSpdfPanel(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, settings: SimulationSettings, depthAlpha: number, accent?: string) {
+  const zoom = Math.max(settings.zoom, 0.6);
+  ctx.save();
+  ctx.globalAlpha = clamp(depthAlpha, 0.28, 0.86);
+  ctx.fillStyle = settings.theme === "light" ? "rgba(255,253,248,0.86)" : "rgba(7,12,11,0.72)";
+  ctx.strokeStyle = accent ? hexToRgba(accent, 0.52) : settings.theme === "light" ? "rgba(15,43,110,0.22)" : "rgba(147,197,253,0.18)";
+  ctx.lineWidth = 1 / zoom;
+  roundRect(ctx, x, y, width, height, 6 / zoom);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPanelRibbon(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, label: string, color: string, settings: SimulationSettings, depthAlpha: number) {
+  const zoom = Math.max(settings.zoom, 0.6);
+  ctx.save();
+  ctx.globalAlpha = clamp(depthAlpha, 0.42, 0.96);
+  ctx.fillStyle = color;
+  roundRect(ctx, x, y, width, 20 / zoom, 4 / zoom);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `950 ${8.5 / zoom}px Inter, system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(label, x + width / 2, y + 10 / zoom);
+  ctx.restore();
+}
+
+function drawSubshellIcon(ctx: CanvasRenderingContext2D, x: number, y: number, kind: SubshellKind, scale: number) {
+  const color = subshellColor(kind);
+  ctx.save();
+  ctx.fillStyle = hexToRgba(color, 0.84);
+  ctx.strokeStyle = hexToRgba(color, 0.44);
+  ctx.lineWidth = 1.2 * scale;
+  if (kind === "s") {
+    ctx.beginPath();
+    ctx.arc(x, y, 12 * scale, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === "p") {
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(x + side * 8 * scale, y, 8 * scale, 11 * scale, Math.PI / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  } else if (kind === "d") {
+    for (let i = 0; i < 4; i += 1) {
+      const angle = i * Math.PI / 2 + Math.PI / 4;
+      ctx.beginPath();
+      ctx.ellipse(x + Math.cos(angle) * 8 * scale, y + Math.sin(angle) * 8 * scale, 6 * scale, 10 * scale, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    for (let i = 0; i < 7; i += 1) {
+      const angle = i * Math.PI * 2 / 7;
+      ctx.beginPath();
+      ctx.ellipse(x + Math.cos(angle) * 7 * scale, y + Math.sin(angle) * 7 * scale, 5 * scale, 8 * scale, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawOrbitalRow(ctx: CanvasRenderingContext2D, x: number, y: number, row: OrbitalFillingRow, settings: SimulationSettings, zoom: number) {
+  ctx.save();
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = settings.theme === "light" ? "#111827" : "#f8fafc";
+  ctx.font = `850 ${8.5 / zoom}px Inter, system-ui`;
+  ctx.fillText(row.label, x, y + 5 / zoom);
+  const box = 11 / zoom;
+  const gap = 3 / zoom;
+  const startX = x + 34 / zoom;
+  for (let index = 0; index < row.boxes; index += 1) {
+    const bx = startX + index * (box + gap);
+    ctx.strokeStyle = settings.theme === "light" ? "rgba(17,24,39,0.78)" : "rgba(248,250,252,0.72)";
+    ctx.lineWidth = 0.9 / zoom;
+    ctx.strokeRect(bx, y, box, box);
+    const up = index < Math.min(row.electrons, row.boxes);
+    const down = row.electrons > row.boxes + index;
+    ctx.fillStyle = row.isLast ? "#db2777" : settings.theme === "light" ? "#111827" : "#f8fafc";
+    ctx.font = `900 ${8.5 / zoom}px Inter, system-ui`;
+    ctx.textAlign = "center";
+    if (up) ctx.fillText("↑", bx + box * 0.36, y + box * 0.48);
+    if (down) ctx.fillText("↓", bx + box * 0.68, y + box * 0.48);
+  }
+  if (row.isLast) {
+    ctx.strokeStyle = "#db2777";
+    ctx.lineWidth = 1.2 / zoom;
+    ctx.strokeRect(startX - 1.5 / zoom, y - 1.5 / zoom, box + 3 / zoom, box + 3 / zoom);
+  }
+  ctx.restore();
+}
+
+function drawEnergyArrow(ctx: CanvasRenderingContext2D, x: number, y: number, height: number, settings: SimulationSettings, zoom: number) {
+  ctx.save();
+  ctx.strokeStyle = "#db2777";
+  ctx.fillStyle = "#db2777";
+  ctx.lineWidth = 3 / zoom;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x, y - height);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x, y - height - 10 / zoom);
+  ctx.lineTo(x - 8 / zoom, y - height + 8 / zoom);
+  ctx.lineTo(x + 8 / zoom, y - height + 8 / zoom);
+  ctx.closePath();
+  ctx.fill();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `850 ${8 / zoom}px Inter, system-ui`;
+  ctx.fillStyle = settings.theme === "light" ? "#111827" : "#f8fafc";
+  ctx.fillText("Increasing", x + 20 / zoom, y - height * 0.5 - 8 / zoom);
+  ctx.fillText("energy", x + 20 / zoom, y - height * 0.5 + 6 / zoom);
+  ctx.restore();
+}
+
+function drawShellDonut(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, shellGroups: ShellGroup[], settings: SimulationSettings, depthAlpha: number) {
+  const total = Math.max(1, shellGroups.reduce((sum, group) => sum + group.electrons, 0));
+  let start = -Math.PI / 2;
+  ctx.save();
+  ctx.globalAlpha = clamp(depthAlpha, 0.42, 0.95);
+  for (const group of shellGroups) {
+    const arc = Math.PI * 2 * group.electrons / total;
+    ctx.beginPath();
+    ctx.strokeStyle = shellGroupColor(group.n);
+    ctx.lineWidth = radius * 0.34;
+    ctx.arc(x, y, radius, start, start + arc);
+    ctx.stroke();
+    start += arc;
+  }
+  ctx.fillStyle = settings.theme === "light" ? "#ffffff" : "#0b1110";
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 0.54, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = settings.theme === "light" ? "#111827" : "#f8fafc";
+  ctx.font = `900 ${10 / Math.max(settings.zoom, 0.6)}px Inter, system-ui`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(total), x, y - 4 / Math.max(settings.zoom, 0.6));
+  ctx.font = `750 ${7 / Math.max(settings.zoom, 0.6)}px Inter, system-ui`;
+  ctx.fillText("electrons", x, y + 7 / Math.max(settings.zoom, 0.6));
+  ctx.restore();
+}
+
+function drawClippedText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number) {
+  if (ctx.measureText(text).width <= maxWidth) {
+    ctx.fillText(text, x, y);
+    return;
+  }
+  let clipped = text;
+  while (clipped.length > 4 && ctx.measureText(`${clipped}...`).width > maxWidth) clipped = clipped.slice(0, -1);
+  ctx.fillText(`${clipped}...`, x, y);
+}
+
 type SubshellKind = "s" | "p" | "d" | "f";
 type SubshellOccupancy = { n: number; kind: SubshellKind; electrons: number };
 type ShellGroup = { n: number; electrons: number; subshells: SubshellOccupancy[] };
+type OrbitalFillingRow = SubshellOccupancy & { label: string; boxes: number; isLast: boolean };
 const subshellOrder: Record<SubshellKind, number> = { s: 0, p: 1, d: 2, f: 3 };
+const subshellCapacity: Record<SubshellKind, number> = { s: 2, p: 6, d: 10, f: 14 };
+const aufbauOrder = ["1s", "2s", "2p", "3s", "3p", "4s", "3d", "4p", "5s", "4d", "5p", "6s", "4f", "5d", "6p", "7s", "5f", "6d", "7p"] as const;
 
 function groupSubshellsByShell(subshells: SubshellOccupancy[]): ShellGroup[] {
   const groups = new Map<number, ShellGroup>();
@@ -1691,11 +2325,55 @@ function groupSubshellsByShell(subshells: SubshellOccupancy[]): ShellGroup[] {
   return [...groups.values()].sort((a, b) => a.n - b.n);
 }
 
+function shellGroupsForElement(shells: readonly number[] | undefined, subshells: SubshellOccupancy[]): ShellGroup[] {
+  const byShell = groupSubshellsByShell(subshells);
+  if (!shells?.length) return byShell;
+  return shells
+    .map((electrons, index) => ({
+      n: index + 1,
+      electrons,
+      subshells: byShell.find((group) => group.n === index + 1)?.subshells ?? []
+    }))
+    .filter((group) => group.electrons > 0);
+}
+
 function compactShellSummary(subshells: SubshellOccupancy[]) {
   return groupSubshellsByShell(subshells).map((group) => {
-    const parts = group.subshells.map((sub) => `${sub.n}${sub.kind}${sub.electrons}`).join(" ");
+    const parts = group.subshells.map((sub) => `${sub.kind}${sub.electrons}`).join(" ");
     return `n=${group.n}: ${parts}  (${group.electrons} e-)`;
   }).slice(-4);
+}
+
+function shortenedShellSummary(group: ShellGroup) {
+  return group.subshells.map((sub) => `${sub.kind}${sub.electrons}`).join(" ");
+}
+
+function expandedConfigurationLines(subshells: SubshellOccupancy[]) {
+  const tokens = subshells.map((sub) => `${sub.n}${sub.kind}${sub.electrons}`);
+  const lines: string[] = [];
+  for (let index = 0; index < tokens.length; index += 6) {
+    lines.push(tokens.slice(index, index + 6).join(" "));
+  }
+  return lines;
+}
+
+function lastOccupiedSubshell(subshells: SubshellOccupancy[]) {
+  const byKey = new Map(subshells.map((sub) => [`${sub.n}${sub.kind}`, sub]));
+  return [...aufbauOrder].reverse().map((key) => byKey.get(key)).find((sub): sub is SubshellOccupancy => Boolean(sub && sub.electrons > 0));
+}
+
+function orbitalFillingRows(subshells: SubshellOccupancy[]): OrbitalFillingRow[] {
+  const byKey = new Map(subshells.map((sub) => [`${sub.n}${sub.kind}`, sub]));
+  const last = lastOccupiedSubshell(subshells);
+  return aufbauOrder
+    .map((key) => byKey.get(key))
+    .filter((sub): sub is SubshellOccupancy => Boolean(sub && sub.electrons > 0))
+    .map((sub) => ({
+      ...sub,
+      label: `${sub.n}${sub.kind}`,
+      boxes: subshellCapacity[sub.kind] / 2,
+      isLast: Boolean(last && last.n === sub.n && last.kind === sub.kind)
+    }));
 }
 
 function shellName(n: number) {
@@ -1737,6 +2415,11 @@ function subshellColor(kind: SubshellKind) {
   if (kind === "p") return "#38bdf8";
   if (kind === "d") return "#8b5cf6";
   return "#f59e0b";
+}
+
+function shellGroupColor(shell: number) {
+  const colors = ["#facc15", "#38bdf8", "#a78bfa", "#f59e0b", "#ef4444", "#22c55e", "#64748b"];
+  return colors[(shell - 1) % colors.length];
 }
 
 function shellRadii(atom: AtomParticle, shellCount: number, settings: SimulationSettings) {
@@ -1883,10 +2566,6 @@ function visibleValenceElectronCount(atom: AtomParticle, state: SimulationState)
   return Math.max(0, data.valenceElectrons - bondedOrder);
 }
 
-function isRadioactiveLike(symbol: AtomSymbol, atomicNumber: number) {
-  return atomicNumber >= 84 || symbol === "Tc" || symbol === "Pm";
-}
-
 function drawEffect(ctx: CanvasRenderingContext2D, state: SimulationState, effect: { from: string; to: string; progress: number; kind: string }, settings: SimulationSettings) {
   const from = state.atoms.find((atom) => atom.id === effect.from);
   const to = state.atoms.find((atom) => atom.id === effect.to);
@@ -1991,6 +2670,7 @@ function nearestBond(bonds: Bond[], atoms: AtomParticle[], x: number, y: number)
     effects: [],
     metallicElectrons: [],
     events: [],
+    nuclearEvents: [],
     selectedAtomId: null,
     selectedBondId: null,
     time: 0,
@@ -2007,6 +2687,26 @@ function nearestBond(bonds: Bond[], atoms: AtomParticle[], x: number, y: number)
     }
   }
   return best;
+}
+
+function nearestElectronSource(sources: ElectronSource[], x: number, y: number, settings: SimulationSettings) {
+  const radius = settings.reactionToolMode === "advanced" ? 18 : 16;
+  return sources
+    .map((source) => ({ source, distance: Math.hypot(source.x - x, source.y - y) }))
+    .filter((item) => item.source.selectable && item.distance <= radius / Math.max(settings.zoom, 0.65))
+    .sort((a, b) => a.distance - b.distance)[0]?.source ?? null;
+}
+
+function nearestElectronTarget(targets: ElectronTarget[], x: number, y: number, settings: SimulationSettings) {
+  const radius = settings.reactionToolMode === "advanced" ? 24 : 20;
+  return targets
+    .map((target) => ({ target, distance: Math.hypot(target.x - x, target.y - y) }))
+    .filter((item) => item.distance <= radius / Math.max(settings.zoom, 0.65))
+    .sort((a, b) => a.distance - b.distance || b.target.priority - a.target.priority)[0]?.target ?? null;
+}
+
+function samePairCanvas(bond: Bond, a: string, b: string) {
+  return (bond.a === a && bond.b === b) || (bond.a === b && bond.b === a);
 }
 
 function distanceToSegment(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {

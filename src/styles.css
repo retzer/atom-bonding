@@ -1,4 +1,4 @@
-﻿@tailwind base;
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -28,7 +28,7 @@ button {
 }
 
 button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.68;
 }
 
@@ -56,6 +56,9 @@ button:disabled {
 .periodic-table-panel,
 .control-dock,
 .learning-panel,
+.time-metric-panel,
+.chem-lab-search-panel,
+.chemistry-lab-panel,
 .info-card,
 .simulation-wrap {
   border: 1px solid rgba(255, 255, 255, 0.11);
@@ -69,6 +72,9 @@ button:disabled {
 .app-shell.light .periodic-table-panel,
 .app-shell.light .control-dock,
 .app-shell.light .learning-panel,
+.app-shell.light .time-metric-panel,
+.app-shell.light .chem-lab-search-panel,
+.app-shell.light .chemistry-lab-panel,
 .app-shell.light .info-card,
 .app-shell.light .simulation-wrap {
   border-color: rgba(24, 34, 30, 0.12);
@@ -77,6 +83,7 @@ button:disabled {
 }
 
 .top-bar {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(260px, 1fr) auto auto;
   align-items: center;
@@ -118,6 +125,7 @@ button:disabled {
 
 .mode-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -176,7 +184,206 @@ button:disabled {
 
 .top-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.time-control {
+  display: grid;
+  grid-template-columns: auto minmax(118px, 150px);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 282px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.app-shell.light .time-control {
+  border-color: rgba(24, 34, 30, 0.1);
+  background: rgba(24, 34, 30, 0.04);
+}
+
+.time-control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #dbe8e3;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.app-shell.light .time-control-label {
+  color: #31443d;
+}
+
+.time-control-label svg {
+  color: #2dd4bf;
+}
+
+.time-control-label strong {
+  min-width: 44px;
+  color: #5eead4;
+  font-size: 0.84rem;
+  text-align: right;
+}
+
+.app-shell.light .time-control-label strong {
+  color: #0f766e;
+}
+
+.time-preset-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.time-preset-row button {
+  min-width: 34px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #dbe8e3;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.app-shell.light .time-preset-row button {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #31443d;
+  background: rgba(24, 34, 30, 0.045);
+}
+
+.time-preset-row button.active {
+  color: #071412;
+  border-color: transparent;
+  background: #5eead4;
+}
+
+.time-control input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: #2dd4bf;
+}
+
+.time-metric-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.time-metric-panel.compact {
+  margin-bottom: 12px;
+}
+
+.time-metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.time-metric-header h3,
+.time-metric-header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+}
+
+.time-metric-header h3 {
+  color: #e5f2ed;
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.app-shell.light .time-metric-header h3 {
+  color: #1f2d28;
+}
+
+.time-metric-header span {
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 999px;
+  color: #5eead4;
+  background: rgba(20, 184, 166, 0.08);
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.app-shell.light .time-metric-header span {
+  color: #0f766e;
+  border-color: rgba(20, 184, 166, 0.18);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.time-metric-value {
+  display: block;
+  padding: 12px 14px;
+  border: 1px solid rgba(94, 234, 212, 0.16);
+  border-radius: 8px;
+  color: #a7f3d0;
+  background: rgba(13, 23, 20, 0.32);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: clamp(1.05rem, 2vw, 1.65rem);
+  font-weight: 900;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.app-shell.light .time-metric-value {
+  color: #0f766e;
+  border-color: rgba(20, 184, 166, 0.2);
+  background: rgba(20, 184, 166, 0.07);
+}
+
+.time-metric-select {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.time-metric-select span {
+  color: #9fb0aa;
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.time-metric-select select {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  color: #e7f4ef;
+  background: rgba(0, 0, 0, 0.18);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.app-shell.light .time-metric-select select {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #20302a;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.time-metric-panel p {
+  margin: 0;
+  color: #9fb0aa;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.app-shell.light .time-metric-panel p {
+  color: #5e6b66;
 }
 
 .icon-button {
@@ -203,6 +410,22 @@ button:disabled {
 .lesson:hover {
   border-color: rgba(94, 234, 212, 0.42);
   transform: translateY(-1px);
+}
+
+.visuals-popover {
+  position: fixed;
+  top: 112px;
+  right: max(18px, calc((100vw - 1720px) / 2 + 18px));
+  z-index: 80;
+  width: min(720px, calc(100vw - 36px));
+  max-height: min(78vh, 780px);
+  overflow-y: auto;
+  border-radius: 8px;
+  scrollbar-gutter: stable;
+}
+
+.visuals-popover .graphics-panel {
+  max-height: none;
 }
 
 .periodic-table-panel {
@@ -671,6 +894,42 @@ button:disabled {
   cursor: grabbing;
 }
 
+.chem-lab-viewport-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 290px);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.chem-lab-viewport-main,
+.chem-lab-timeline-rail {
+  min-width: 0;
+}
+
+.chem-lab-timeline-rail {
+  display: flex;
+  height: clamp(520px, calc(100vh - 250px), 760px);
+  max-height: clamp(520px, calc(100vh - 250px), 760px);
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.chem-lab-timeline-rail .time-metric-panel {
+  flex: 0 0 auto;
+}
+
+.chem-lab-timeline-rail .reaction-timeline {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .molecule-3d-wrap {
   touch-action: none;
   background:
@@ -755,6 +1014,61 @@ button:disabled {
   color: #071412;
   border-color: transparent;
   background: #5eead4;
+}
+
+.composition-workspace .viewport-camera-settings {
+  width: min(560px, calc(100% - 28px));
+  max-width: calc(100% - 28px);
+  justify-content: flex-end;
+}
+
+.viewport-chem-search {
+  position: absolute;
+  top: 62px;
+  right: 14px;
+  z-index: 7;
+  width: min(560px, calc(100% - 28px));
+  max-width: calc(100% - 28px);
+  pointer-events: auto;
+}
+
+.viewport-chem-search .chem-lab-search-panel {
+  gap: 8px;
+  padding: 10px;
+  border-color: rgba(94, 234, 212, 0.18);
+  background: rgba(10, 12, 12, 0.74);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(18px);
+}
+
+.viewport-chem-search .molecule-builder {
+  margin: 0;
+}
+
+.viewport-chem-search .builder-search,
+.viewport-chem-search .builder-button {
+  min-height: 38px;
+}
+
+.viewport-chem-search .builder-message {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.viewport-chem-search .chemistry-lab-suggestions {
+  max-height: min(250px, calc(100vh - 280px));
+  overflow: auto;
+}
+
+.viewport-chem-search .builder-results {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.app-shell.light .viewport-chem-search .chem-lab-search-panel {
+  border-color: rgba(13, 148, 136, 0.18);
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 18px 46px rgba(31, 41, 55, 0.16);
 }
 
 .canvas-readout span {
@@ -955,6 +1269,7 @@ button:disabled {
 
 .control-dock,
 .learning-panel,
+.chemistry-lab-panel,
 .info-card {
   padding: 14px;
 }
@@ -1014,6 +1329,45 @@ button:disabled {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.viewport-controls-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 7px;
+}
+
+.viewport-controls-list span {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 7px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: #cbd8d3;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+.viewport-controls-list svg {
+  grid-row: span 2;
+  color: #5eead4;
+}
+
+.viewport-controls-list strong {
+  color: #f8fafc;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.app-shell.light .viewport-controls-list span {
+  color: #61706a;
+  background: rgba(24, 34, 30, 0.045);
+}
+
+.app-shell.light .viewport-controls-list strong {
+  color: #18221e;
 }
 
 .control-grid {
@@ -1301,8 +1655,16 @@ button:disabled {
   color: #99f6e4;
 }
 
+.builder-message.error {
+  color: #fca5a5;
+}
+
 .app-shell.light .builder-message.success {
   color: #047857;
+}
+
+.app-shell.light .builder-message.error {
+  color: #b91c1c;
 }
 
 .preset-action {
@@ -1819,6 +2181,174 @@ button:disabled {
   margin-bottom: 14px;
 }
 
+.inspection-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(116px, 148px);
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.inspection-hero .atom-title {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.inspection-shell-model {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+  padding: 6px 6px 2px;
+  border: 1px solid rgba(94, 234, 212, 0.12);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(94, 234, 212, 0.12), transparent 62%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.inspection-shell-model svg {
+  display: block;
+  width: min(136px, 100%);
+  aspect-ratio: 1;
+  overflow: hidden;
+  opacity: 0.9;
+}
+
+.inspection-shell-model > span {
+  max-width: 100%;
+  margin-top: -2px;
+  color: #99a7a1;
+  font-size: 0.62rem;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspection-shell-ring {
+  fill: none;
+  stroke: rgba(14, 165, 233, 0.42);
+  stroke-width: 1.25;
+  filter: drop-shadow(0 0 3px rgba(45, 212, 191, 0.16));
+}
+
+.inspection-shell-electrons {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: inspection-orbit var(--spin-duration) linear infinite;
+  animation-delay: var(--spin-delay);
+}
+
+.inspection-electron-dot {
+  fill: #2dd4bf;
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 0.6;
+  filter: drop-shadow(0 0 3px rgba(45, 212, 191, 0.55));
+}
+
+.inspection-nucleus-glow {
+  opacity: 0.22;
+  filter: blur(8px);
+}
+
+.inspection-nucleus {
+  stroke: rgba(255, 255, 255, 0.32);
+  stroke-width: 1;
+}
+
+.inspection-nucleus-symbol {
+  fill: #f8fafc;
+  font-size: 18px;
+  font-weight: 950;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(7, 20, 18, 0.35);
+  stroke-width: 2px;
+}
+
+@keyframes inspection-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.app-shell.light .inspection-shell-model {
+  border-color: rgba(13, 148, 136, 0.12);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(45, 212, 191, 0.15), transparent 62%),
+    rgba(255, 255, 255, 0.52);
+}
+
+.app-shell.light .inspection-shell-model > span {
+  color: #66756f;
+}
+
+.inspection-ai-notes {
+  display: grid;
+  gap: 8px;
+}
+
+.inspection-ai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inspection-ai-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspection-ai-head span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #071412;
+  background: #99f6e4;
+  font-size: 0.66rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.inspection-ai-notes ul {
+  display: grid;
+  gap: 5px;
+  margin: -2px 0 0;
+  padding-left: 18px;
+  color: #cddbd5;
+  font-size: 0.84rem;
+  line-height: 1.38;
+}
+
+.inspection-ai-button {
+  justify-self: start;
+}
+
+.app-shell.light .inspection-ai-head span {
+  color: #06251f;
+  background: #5eead4;
+}
+
+.app-shell.light .inspection-ai-notes ul {
+  color: #34433d;
+}
+
+.app-shell.light .inspection-shell-ring {
+  stroke: rgba(14, 165, 233, 0.36);
+}
+
+.app-shell.light .inspection-electron-dot {
+  fill: #0d9488;
+  stroke: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell.light .inspection-nucleus-symbol {
+  fill: #17211d;
+  stroke: rgba(255, 255, 255, 0.55);
+}
+
 .atom-title > span {
   display: grid;
   width: 56px;
@@ -1835,12 +2365,15 @@ button:disabled {
 
 .atom-title h3 {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1.58rem;
+  line-height: 1.03;
+  letter-spacing: 0;
 }
 
 .atom-title p {
-  margin: 3px 0 0;
+  margin: 5px 0 0;
   color: #a7b2ad;
+  font-size: 1.02rem;
 }
 
 .fact-grid {
@@ -1938,6 +2471,129 @@ button:disabled {
 .app-shell.light .meter-block {
   border-color: rgba(20, 184, 166, 0.18);
   background: rgba(20, 184, 166, 0.08);
+}
+
+.isotope-card {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 8px;
+  background: rgba(20, 184, 166, 0.06);
+}
+
+.isotope-card-head,
+.isotope-edit-row,
+.isotope-edit-row > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.isotope-card-head {
+  justify-content: space-between;
+}
+
+.isotope-card-head strong,
+.isotope-edit-row span {
+  color: #dffcf5;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.isotope-card-head p,
+.isotope-note {
+  margin: 0;
+  color: #a9b8b2;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.isotope-card-head > span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #0f766e;
+  background: rgba(45, 212, 191, 0.18);
+  font-size: 0.68rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.isotope-select {
+  display: grid;
+  gap: 5px;
+}
+
+.isotope-select span {
+  color: #99a7a1;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.isotope-select select {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #eef5f1;
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 800;
+}
+
+.isotope-edit-row {
+  justify-content: space-between;
+}
+
+.isotope-edit-row button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  border-radius: 8px;
+  color: #dffcf5;
+  background: rgba(20, 184, 166, 0.12);
+  font-weight: 900;
+}
+
+.isotope-edit-row button:disabled {
+  opacity: 0.35;
+}
+
+.isotope-high,
+.isotope-extreme {
+  border-color: rgba(250, 204, 21, 0.28);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.app-shell.light .isotope-card {
+  border-color: rgba(13, 148, 136, 0.16);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.app-shell.light .isotope-card-head strong,
+.app-shell.light .isotope-edit-row span {
+  color: #20302a;
+}
+
+.app-shell.light .isotope-card-head p,
+.app-shell.light .isotope-note {
+  color: #61706a;
+}
+
+.app-shell.light .isotope-select span {
+  color: #66756f;
+}
+
+.app-shell.light .isotope-select select {
+  color: #20302a;
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(24, 34, 30, 0.12);
+}
+
+.app-shell.light .isotope-edit-row button {
+  color: #115e59;
+  background: rgba(45, 212, 191, 0.18);
 }
 
 .app-shell.light .meter {
@@ -3448,6 +4104,333 @@ gap: 14px;
 
 .lesson-quiz h3 { margin: 0; font-size: 0.95rem; }
 
+.module-assessment-note {
+  margin: -4px 0 2px;
+  color: #b7c3be;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.app-shell.light .module-assessment-note {
+  color: #61706a;
+}
+
+.learning-surfaces,
+.module-summary-card {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.lesson-bridge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.learning-surface-card,
+.inline-recall-card,
+.module-summary-card {
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.learning-surface-card.key {
+  border-color: rgba(94, 234, 212, 0.18);
+  background: rgba(94, 234, 212, 0.06);
+}
+
+.learning-surface-card.mistake {
+  border-color: rgba(251, 191, 36, 0.22);
+  background: rgba(251, 191, 36, 0.06);
+}
+
+.learning-surface-label {
+  display: block;
+  margin-bottom: 5px;
+  color: #5eead4;
+  font-size: 0.7rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.learning-surface-card p,
+.inline-recall-card p,
+.module-summary-card p {
+  margin: 0;
+  color: #cbd5d1;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.learning-objectives,
+.module-summary-card ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #cbd5d1;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.concept-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.concept-chip-row span {
+  padding: 4px 8px;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 999px;
+  color: #99f6e4;
+  background: rgba(94, 234, 212, 0.08);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.inline-recall-card {
+  border-color: rgba(96, 165, 250, 0.22);
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.inline-recall-card.correct {
+  border-color: rgba(94, 234, 212, 0.32);
+  animation: inline-recall-correct 520ms ease both;
+}
+
+.inline-recall-card.wrong {
+  border-color: rgba(251, 113, 133, 0.34);
+  animation: inline-recall-wrong 420ms ease both;
+}
+
+.inline-recall-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.inline-recall-options button {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  color: #eef5f1;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inline-recall-options button.correct {
+  border-color: #5eead4;
+  color: #99f6e4;
+  background: rgba(94, 234, 212, 0.14);
+  animation: inline-recall-answer-pop 420ms ease both;
+}
+
+.inline-recall-options button.wrong {
+  border-color: #fb7185;
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.13);
+  animation: inline-recall-answer-shake 360ms ease both;
+}
+
+.inline-recall-feedback {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  min-height: 34px;
+}
+
+.inline-recall-result {
+  display: inline-grid;
+  place-items: center;
+  min-width: 78px;
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  animation: inline-recall-result-pop 680ms cubic-bezier(0.18, 0.9, 0.24, 1.18) both;
+}
+
+.inline-recall-result.correct {
+  color: #052e2b;
+  background: #5eead4;
+  box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.45);
+}
+
+.inline-recall-result.wrong {
+  color: #fff1f2;
+  background: #e11d48;
+}
+
+.inline-recall-card small {
+  display: block;
+  color: #b7c3be;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.inline-recall-reset {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid rgba(94, 234, 212, 0.24);
+  border-radius: 7px;
+  color: #99f6e4;
+  background: rgba(94, 234, 212, 0.08);
+  font-size: 0.73rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: opacity 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.inline-recall-reset:hover {
+  background: rgba(94, 234, 212, 0.14);
+}
+
+.inline-recall-reset:disabled {
+  cursor: wait;
+  opacity: 0.42;
+  transform: translateY(1px);
+}
+
+.module-summary-card {
+  margin-top: 12px;
+  border-color: rgba(94, 234, 212, 0.2);
+  background: rgba(94, 234, 212, 0.055);
+}
+
+.module-summary-card h3 {
+  margin: 0;
+  color: #f8fffd;
+  font-size: 1rem;
+}
+
+.module-summary-next {
+  color: #99f6e4 !important;
+  font-weight: 850;
+}
+
+.app-shell.light .learning-surface-card,
+.app-shell.light .inline-recall-card,
+.app-shell.light .module-summary-card {
+  border-color: rgba(24, 34, 30, 0.08);
+  background: rgba(24, 34, 30, 0.035);
+}
+
+.app-shell.light .learning-surface-card.key {
+  border-color: rgba(13, 148, 136, 0.18);
+  background: rgba(13, 148, 136, 0.07);
+}
+
+.app-shell.light .learning-surface-card.mistake {
+  border-color: rgba(180, 83, 9, 0.18);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.app-shell.light .learning-surface-label {
+  color: #0d9488;
+}
+
+.app-shell.light .learning-surface-card p,
+.app-shell.light .inline-recall-card p,
+.app-shell.light .module-summary-card p,
+.app-shell.light .learning-objectives,
+.app-shell.light .module-summary-card ul,
+.app-shell.light .inline-recall-card small {
+  color: #44524c;
+}
+
+.app-shell.light .concept-chip-row span {
+  border-color: rgba(13, 148, 136, 0.18);
+  color: #0f766e;
+  background: rgba(13, 148, 136, 0.08);
+}
+
+.app-shell.light .inline-recall-options button {
+  border-color: rgba(24, 34, 30, 0.12);
+  color: #20302a;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell.light .inline-recall-options button.correct {
+  border-color: #0d9488;
+  color: #047857;
+  background: rgba(13, 148, 136, 0.12);
+}
+
+.app-shell.light .inline-recall-options button.wrong {
+  border-color: #dc2626;
+  color: #b91c1c;
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.app-shell.light .inline-recall-reset {
+  border-color: rgba(13, 148, 136, 0.22);
+  color: #0f766e;
+  background: rgba(13, 148, 136, 0.08);
+}
+
+.app-shell.light .inline-recall-result.correct {
+  color: #042f2e;
+  background: #2dd4bf;
+}
+
+.app-shell.light .inline-recall-result.wrong {
+  color: #fff1f2;
+  background: #dc2626;
+}
+
+@keyframes inline-recall-correct {
+  0% { box-shadow: 0 0 0 rgba(94, 234, 212, 0); transform: translateY(0); }
+  35% { box-shadow: 0 0 0 6px rgba(94, 234, 212, 0.16); transform: translateY(-1px); }
+  100% { box-shadow: 0 0 0 rgba(94, 234, 212, 0); transform: translateY(0); }
+}
+
+@keyframes inline-recall-wrong {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+  75% { transform: translateX(-2px); }
+}
+
+@keyframes inline-recall-answer-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.045); }
+  100% { transform: scale(1); }
+}
+
+@keyframes inline-recall-answer-shake {
+  0%, 100% { transform: translateX(0); }
+  30% { transform: translateX(-2px); }
+  60% { transform: translateX(2px); }
+}
+
+@keyframes inline-recall-result-pop {
+  0% { opacity: 0; transform: scale(0.72) translateY(6px); }
+  50% { opacity: 1; transform: scale(1.08) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.app-shell.light .module-summary-card h3 {
+  color: #18221e;
+}
+
+.app-shell.light .module-summary-next {
+  color: #0f766e !important;
+}
+
 .quiz-card {
 padding: 14px;
 border: 1px solid rgba(255, 255, 255, 0.09);
@@ -3871,4 +4854,1440 @@ opacity: 0;
 .preset-grid,
 .legend-grid {
   grid-template-columns: 1fr;
+}
+
+.composition-workspace {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.composition-workspace > .right-column {
+  align-self: stretch;
+}
+
+.chem-lab-search-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.chem-lab-search-panel .molecule-builder {
+  margin-bottom: 0;
+}
+
+.chem-lab-search-panel .builder-search input {
+  min-height: 38px;
+}
+
+.compact-search-suggestions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.compact-search-suggestions .chemistry-lab-subhead {
+  margin: 0;
+}
+
+.compact-search-suggestions .chemistry-chip-row {
+  justify-content: flex-end;
+}
+
+.compact-search-suggestions .builder-results {
+  grid-column: 1 / -1;
+}
+
+.chemistry-lab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: none;
+  overflow: visible;
+}
+
+.chemistry-lab-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chemistry-lab-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.chemistry-lab-title svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #5eead4;
+}
+
+.chemistry-lab-title h2,
+.chem-card-header h3,
+.compact-chem-list h4 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.chemistry-lab-title h2 {
+  font-size: 1.08rem;
+}
+
+.chemistry-lab-title p {
+  margin: 3px 0 0;
+  color: #a7b2ad;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.app-shell.light .chemistry-lab-title p {
+  color: #61706a;
+}
+
+.chemistry-search {
+  margin-bottom: 0;
+}
+
+.source-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #a7b2ad;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.chemistry-search .source-line {
+  grid-column: 1 / -1;
+}
+
+.source-line span {
+  min-height: 24px;
+  padding: 4px 7px;
+  border: 1px solid rgba(94, 234, 212, 0.16);
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.07);
+}
+
+.app-shell.light .source-line {
+  color: #61706a;
+}
+
+.app-shell.light .source-line span {
+  border-color: rgba(13, 148, 136, 0.14);
+  background: rgba(20, 184, 166, 0.07);
+}
+
+.chemistry-lab-suggestions {
+  display: grid;
+  gap: 8px;
+}
+
+.chemistry-lab-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #a7b2ad;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.chemistry-lab-subhead small {
+  color: #7dd3fc;
+  font-size: 0.7rem;
+  text-transform: none;
+}
+
+.app-shell.light .chemistry-lab-subhead {
+  color: #61706a;
+}
+
+.app-shell.light .chemistry-lab-subhead small {
+  color: #0369a1;
+}
+
+.chemistry-chip-row,
+.synonym-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chemistry-chip-row button,
+.synonym-row span {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 999px;
+  color: #99f6e4;
+  background: rgba(20, 184, 166, 0.08);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.chemistry-chip-row button.active {
+  color: #071412;
+  background: #5eead4;
+}
+
+.app-shell.light .chemistry-chip-row button,
+.app-shell.light .synonym-row span {
+  border-color: rgba(13, 148, 136, 0.18);
+  color: #0f766e;
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.app-shell.light .chemistry-chip-row button.active {
+  color: #06251f;
+  background: #2dd4bf;
+}
+
+.chemistry-results {
+  grid-template-columns: 1fr;
+}
+
+.chem-lab-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.app-shell.light .chem-lab-card {
+  border-color: rgba(24, 34, 30, 0.1);
+  background: rgba(24, 34, 30, 0.035);
+}
+
+.chem-card-header,
+.pubchem-title-line,
+.chemistry-list div,
+.chemistry-row-button,
+.compact-chem-list div,
+.compact-row-button,
+.percent-bars > div,
+.percent-row-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chem-card-header h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.94rem;
+}
+
+.chem-card-header h3 svg {
+  color: #5eead4;
+}
+
+.chem-card-header span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #071412;
+  background: #99f6e4;
+  font-size: 0.67rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.app-shell.light .chem-card-header span {
+  color: #06251f;
+  background: #5eead4;
+}
+
+.composition-hero,
+.chemistry-metric-grid,
+.property-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.composition-hero > div,
+.chemistry-metric,
+.property-grid > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.composition-hero > div:first-child {
+  grid-column: 1 / -1;
+}
+
+.app-shell.light .composition-hero > div,
+.app-shell.light .chemistry-metric,
+.app-shell.light .property-grid > div {
+  border-color: rgba(24, 34, 30, 0.08);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.chem-label,
+.chemistry-metric span,
+.property-grid span,
+.chemistry-list span,
+.compact-chem-list span,
+.percent-bars span {
+  display: block;
+  color: #a7b2ad;
+  font-size: 0.7rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.composition-hero strong,
+.chemistry-metric strong,
+.property-grid strong,
+.chemistry-list strong,
+.compact-chem-list strong,
+.percent-bars strong {
+  min-width: 0;
+  color: #f8fafc;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.composition-hero strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 1.22rem;
+}
+
+.app-shell.light .chem-label,
+.app-shell.light .chemistry-metric span,
+.app-shell.light .property-grid span,
+.app-shell.light .chemistry-list span,
+.app-shell.light .compact-chem-list span,
+.app-shell.light .percent-bars span {
+  color: #66766f;
+}
+
+.app-shell.light .composition-hero strong,
+.app-shell.light .chemistry-metric strong,
+.app-shell.light .property-grid strong,
+.app-shell.light .chemistry-list strong,
+.app-shell.light .compact-chem-list strong,
+.app-shell.light .percent-bars strong {
+  color: #18221e;
+}
+
+.chemistry-row-button,
+.compact-row-button,
+.percent-row-button,
+.chemistry-metric.interactive {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chemistry-row-button,
+.compact-row-button,
+.percent-row-button {
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  background: transparent;
+}
+
+.chemistry-row-button:hover,
+.compact-row-button:hover,
+.percent-row-button:hover,
+.chemistry-metric.interactive:hover {
+  border-color: rgba(94, 234, 212, 0.34);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.chemistry-row-button:focus-visible,
+.compact-row-button:focus-visible,
+.percent-row-button:focus-visible,
+.chemistry-metric.interactive:focus-visible {
+  outline: 2px solid rgba(45, 212, 191, 0.72);
+  outline-offset: 2px;
+}
+
+.app-shell.light .chemistry-row-button:hover,
+.app-shell.light .compact-row-button:hover,
+.app-shell.light .percent-row-button:hover,
+.app-shell.light .chemistry-metric.interactive:hover {
+  border-color: rgba(13, 148, 136, 0.25);
+  background: rgba(20, 184, 166, 0.09);
+}
+
+.chemistry-list,
+.percent-bars,
+.compact-chem-list {
+  display: grid;
+  gap: 7px;
+}
+
+.chemistry-list div,
+.chemistry-row-button,
+.compact-chem-list div,
+.compact-row-button {
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.app-shell.light .chemistry-list div,
+.app-shell.light .chemistry-row-button,
+.app-shell.light .compact-chem-list div,
+.app-shell.light .compact-row-button {
+  border-bottom-color: rgba(24, 34, 30, 0.08);
+}
+
+.percent-bars > div,
+.percent-row-button {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 54px;
+}
+
+.percent-bars div div {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.percent-bars i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5eead4, #38bdf8);
+}
+
+.app-shell.light .percent-bars div div {
+  background: rgba(24, 34, 30, 0.08);
+}
+
+.compact-chem-list h4 {
+  color: #d1fae5;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.compact-chem-list p,
+.chemistry-summary,
+.chemistry-empty {
+  margin: 0;
+  color: #a7b2ad;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.app-shell.light .compact-chem-list h4 {
+  color: #0f766e;
+}
+
+.app-shell.light .compact-chem-list p,
+.app-shell.light .chemistry-summary,
+.app-shell.light .chemistry-empty {
+  color: #56665f;
+}
+
+.chemistry-meaning {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: #dbe7e2;
+  font-size: 0.86rem;
+  line-height: 1.42;
+}
+
+.app-shell.light .chemistry-meaning {
+  color: #34433d;
+}
+
+.ai-insight {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-insight > p {
+  margin: 0;
+  color: #dbe7e2;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.app-shell.light .ai-insight > p {
+  color: #34433d;
+}
+
+.ai-generate-button {
+  justify-self: start;
+}
+
+.chem-ai-notes-panel,
+.chem-viewport-controls,
+.reaction-builder,
+.reaction-timeline {
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
+}
+
+.reaction-builder {
+  margin-top: 12px;
+}
+
+.reaction-action-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.reaction-mode-row,
+.electron-route-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.reaction-mode-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.electron-route-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reaction-mode-row button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  color: #aeb9b4;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.74rem;
+  font-weight: 950;
+}
+
+.reaction-mode-row button.active {
+  border-color: rgba(94, 234, 212, 0.62);
+  color: #071412;
+  background: #5eead4;
+}
+
+.reaction-action-grid button,
+.reaction-builder-actions button,
+.reaction-score-strip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.reaction-action-grid button {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  color: #aeb9b4;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.reaction-action-grid button.active {
+  border-color: rgba(94, 234, 212, 0.62);
+  color: #071412;
+  background: #5eead4;
+}
+
+.reaction-target-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.reaction-select-field {
+  display: grid;
+  gap: 5px;
+}
+
+.reaction-select-field span {
+  color: #a7b2ad;
+  font-size: 0.7rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.reaction-select-field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  color: #e7f4ef;
+  background: rgba(0, 0, 0, 0.18);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.reaction-preview-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.24);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.reaction-preview-card.allowed {
+  border-color: rgba(45, 212, 191, 0.26);
+  background: rgba(20, 184, 166, 0.09);
+}
+
+.reaction-preview-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.reaction-preview-status svg {
+  color: #fbbf24;
+}
+
+.reaction-preview-card.allowed .reaction-preview-status svg {
+  color: #5eead4;
+}
+
+.reaction-preview-card p,
+.reaction-preview-card ul {
+  margin: 0;
+  color: #cddbd5;
+  font-size: 0.84rem;
+  line-height: 1.42;
+}
+
+.reaction-preview-card ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+}
+
+.reaction-delta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.reaction-delta-grid span {
+  display: grid;
+  gap: 2px;
+  min-height: 42px;
+  padding: 7px 8px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 7px;
+  color: #dbe7e2;
+  background: rgba(20, 184, 166, 0.08);
+  font-size: 0.73rem;
+  font-weight: 850;
+}
+
+.reaction-delta-grid strong {
+  color: #5eead4;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+}
+
+.reaction-reason-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.reaction-score-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.reaction-score-strip span,
+.reaction-score-strip button {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  color: #dbe7e2;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.reaction-score-strip button {
+  cursor: pointer;
+}
+
+.reaction-score-strip .positive {
+  color: #bbf7d0;
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.reaction-score-strip .negative {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.reaction-builder-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reaction-builder-actions .subtle {
+  color: #cbd5d0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.reaction-builder-actions .builder-button:disabled,
+.mechanism-confirm-pill button:disabled {
+  cursor: not-allowed;
+}
+
+.reaction-step-list {
+  display: grid;
+  gap: 8px;
+}
+
+.reaction-step-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.reaction-step-row.future {
+  opacity: 0.54;
+}
+
+.reaction-step-row.current .reaction-step-body,
+.reaction-step-row.current .reaction-time-chip {
+  border-color: rgba(94, 234, 212, 0.42);
+  box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.1);
+}
+
+.reaction-step-list button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+}
+
+.reaction-step-list .reaction-time-chip {
+  display: inline-flex;
+  width: auto;
+  min-width: 88px;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  color: #5eead4;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.reaction-step-list .reaction-step-body {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  width: 100%;
+}
+
+.reaction-step-list .reaction-step-body.static {
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.reaction-step-list .reaction-step-body > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  color: #071412;
+  background: #5eead4;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.reaction-step-list strong,
+.reaction-step-list small,
+.reaction-step-list p {
+  display: block;
+}
+
+.reaction-step-list small {
+  margin-top: 2px;
+  color: #99a7a1;
+  font-size: 0.73rem;
+  font-weight: 850;
+}
+
+.reaction-step-list p {
+  margin: 5px 0 0;
+  color: #cddbd5;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.app-shell.light .reaction-action-grid button {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #61706a;
+  background: rgba(24, 34, 30, 0.04);
+}
+
+.app-shell.light .reaction-mode-row button {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #61706a;
+  background: rgba(24, 34, 30, 0.04);
+}
+
+.app-shell.light .reaction-mode-row button.active {
+  color: #06251f;
+  background: #5eead4;
+}
+
+.app-shell.light .reaction-action-grid button.active {
+  color: #06251f;
+  background: #5eead4;
+}
+
+.app-shell.light .reaction-select-field span {
+  color: #66766f;
+}
+
+.app-shell.light .reaction-select-field select {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #20302a;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.app-shell.light .reaction-preview-card p,
+.app-shell.light .reaction-preview-card ul,
+.app-shell.light .reaction-step-list p {
+  color: #34433d;
+}
+
+.app-shell.light .reaction-score-strip span,
+.app-shell.light .reaction-score-strip button,
+.app-shell.light .reaction-step-list button,
+.app-shell.light .reaction-delta-grid span {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #34433d;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.mechanism-handle-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.mechanism-handle {
+  position: absolute;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  translate: -50% -50%;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  color: #061512;
+  background: #5eead4;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  font-size: 0.55rem;
+  font-weight: 950;
+  pointer-events: auto;
+}
+
+.mechanism-handle.target {
+  background: #93c5fd;
+}
+
+.mechanism-handle.active {
+  outline: 3px solid rgba(45, 212, 191, 0.34);
+}
+
+.mechanism-confirm-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  z-index: 12;
+  display: flex;
+  max-width: min(760px, calc(100% - 28px));
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px 7px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  border-radius: 999px;
+  color: #f8fafc;
+  background: rgba(13, 23, 20, 0.9);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+  translate: -50% 0;
+}
+
+.mechanism-confirm-pill.allowed {
+  border-color: rgba(45, 212, 191, 0.42);
+}
+
+.mechanism-confirm-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.mechanism-confirm-pill small {
+  color: #9fb0aa;
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.mechanism-confirm-pill button {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  color: #06251f;
+  background: #5eead4;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.mechanism-confirm-pill button:disabled {
+  opacity: 0.45;
+}
+
+.mechanism-confirm-pill button + button {
+  color: #dbe7e2;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.app-shell.light .mechanism-confirm-pill {
+  color: #20302a;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.app-shell.light .mechanism-confirm-pill button + button {
+  color: #34433d;
+  background: rgba(24, 34, 30, 0.08);
+}
+
+.app-shell.light .reaction-step-list small {
+  color: #66766f;
+}
+
+.chem-lab-under-viewport {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(340px, 1fr) minmax(390px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.chem-lab-explanation-stack {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.chem-lab-under-viewport .info-panel {
+  min-width: 0;
+}
+
+.chem-lab-analysis-slot {
+  min-width: 0;
+  align-self: start;
+}
+
+.chem-lab-analysis-slot .chemistry-lab-panel {
+  max-height: clamp(620px, 76vh, 980px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.chem-ai-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ai-mini-list {
+  display: grid;
+  gap: 6px;
+}
+
+.ai-mini-list h4 {
+  margin: 0;
+  color: #d1fae5;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.ai-mini-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: #dbe7e2;
+  font-size: 0.86rem;
+  line-height: 1.42;
+}
+
+.ai-mini-list p {
+  margin: 0;
+  color: #a7b2ad;
+  font-size: 0.84rem;
+}
+
+.app-shell.light .ai-mini-list h4 {
+  color: #0f766e;
+}
+
+.app-shell.light .ai-mini-list ul {
+  color: #34433d;
+}
+
+.app-shell.light .ai-mini-list p {
+  color: #56665f;
+}
+
+.chem-viewport-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(23, 25, 25, 0.78);
+  backdrop-filter: blur(18px);
+}
+
+.app-shell.light .chem-viewport-controls {
+  border-color: rgba(24, 34, 30, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.chem-viewport-control-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chem-viewport-control-title > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #5eead4;
+}
+
+.chem-viewport-control-title h3 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.chem-viewport-control-title p {
+  margin: 2px 0 0;
+  color: #a7b2ad;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.app-shell.light .chem-viewport-control-title p {
+  color: #61706a;
+}
+
+.chem-viewport-controls > .source-line {
+  grid-column: 1 / -1;
+}
+
+.chem-segmented-control {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chem-segmented-control button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 6px;
+  color: #aeb9b4;
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.chem-segmented-control button.active {
+  color: #071412;
+  background: #5eead4;
+}
+
+.app-shell.light .chem-segmented-control {
+  border-color: rgba(24, 34, 30, 0.1);
+  background: rgba(24, 34, 30, 0.04);
+}
+
+.app-shell.light .chem-segmented-control button {
+  color: #61706a;
+}
+
+.app-shell.light .chem-segmented-control button.active {
+  color: #06251f;
+  background: #2dd4bf;
+}
+
+.chem-element-picker {
+  position: relative;
+  z-index: 35;
+}
+
+.chem-element-picker-trigger {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 11px 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #dbe7e2;
+  background: rgba(255, 255, 255, 0.055);
+  font-size: 0.82rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.chem-element-picker-trigger:hover,
+.chem-element-picker-trigger[aria-expanded="true"] {
+  border-color: rgba(94, 234, 212, 0.38);
+  background: rgba(94, 234, 212, 0.09);
+}
+
+.chem-element-badge {
+  display: grid;
+  min-width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 7px;
+  color: #06251f;
+  background: #5eead4;
+  font-weight: 950;
+}
+
+.chem-element-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  gap: 10px;
+  width: min(720px, calc(100vw - 36px));
+  max-height: min(560px, calc(100vh - 180px));
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 8px;
+  background: rgba(14, 18, 17, 0.94);
+  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(20px);
+  scrollbar-gutter: stable;
+}
+
+.chem-element-search {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #99f6e4;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.chem-element-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #eef5f1;
+  background: transparent;
+}
+
+.chem-mini-periodic {
+  display: grid;
+  grid-template-columns: repeat(18, minmax(0, 1fr));
+  grid-auto-rows: 36px;
+  gap: 5px;
+  min-width: 640px;
+}
+
+.chem-mini-periodic.searching {
+  grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
+  grid-auto-rows: 44px;
+  min-width: 0;
+}
+
+.chem-mini-element {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid color-mix(in srgb, var(--periodic-color) 55%, transparent);
+  border-radius: 7px;
+  color: #f6fffc;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--periodic-color) 22%, transparent), rgba(255, 255, 255, 0.035));
+  text-align: left;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.chem-mini-element:hover,
+.chem-mini-element.selected {
+  border-color: color-mix(in srgb, var(--periodic-color) 88%, #5eead4);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--periodic-color) 35%, transparent), rgba(94, 234, 212, 0.1));
+  transform: translateY(-1px);
+}
+
+.chem-mini-element span {
+  color: #a7b2ad;
+  font-size: 0.55rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.chem-mini-element strong {
+  color: color-mix(in srgb, var(--periodic-color) 68%, #ffffff);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.chem-mini-element small {
+  min-width: 0;
+  overflow: hidden;
+  color: #cbd5d1;
+  font-size: 0.48rem;
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell.light .chem-element-picker-trigger {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #34433d;
+  background: rgba(24, 34, 30, 0.04);
+}
+
+.app-shell.light .chem-element-dropdown {
+  border-color: rgba(13, 148, 136, 0.18);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 24px 56px rgba(31, 41, 55, 0.18);
+}
+
+.app-shell.light .chem-element-search {
+  border-color: rgba(24, 34, 30, 0.1);
+  color: #0f766e;
+  background: rgba(24, 34, 30, 0.04);
+}
+
+.app-shell.light .chem-element-search input {
+  color: #20302a;
+}
+
+.app-shell.light .chem-mini-element {
+  color: #20302a;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--periodic-color) 18%, transparent), rgba(255, 255, 255, 0.72));
+}
+
+.app-shell.light .chem-mini-element span,
+.app-shell.light .chem-mini-element small {
+  color: #61706a;
+}
+
+.pubchem-title-line strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pubchem-title-line a {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 8px;
+  color: #99f6e4;
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.app-shell.light .pubchem-title-line a {
+  border-color: rgba(13, 148, 136, 0.18);
+  color: #0f766e;
+}
+
+.pro-property-grid {
+  grid-template-columns: 1fr;
+}
+
+.synonym-row {
+  margin-top: 2px;
+}
+
+.warning-card {
+  border-color: rgba(251, 191, 36, 0.26);
+  background: rgba(251, 191, 36, 0.07);
+}
+
+@media (max-width: 1100px) {
+  .composition-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .chem-lab-viewport-row {
+    grid-template-columns: 1fr;
+  }
+
+  .chem-lab-timeline-rail {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .chem-lab-timeline-rail .reaction-timeline {
+    flex: none;
+    max-height: 280px;
+  }
+
+  .chemistry-lab-panel {
+    max-height: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .reaction-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reaction-target-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .composition-hero,
+  .chemistry-metric-grid,
+  .property-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chem-viewport-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .chem-element-picker,
+  .chem-element-picker-trigger {
+    width: 100%;
+  }
+
+  .chem-element-dropdown {
+    right: auto;
+    left: 0;
+    width: calc(100vw - 38px);
+  }
+
+  .chem-mini-periodic {
+    grid-template-columns: repeat(auto-fill, minmax(45px, 1fr));
+    grid-auto-rows: 42px;
+    min-width: 0;
+  }
+
+  .visuals-popover {
+    top: 96px;
+    right: 10px;
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 112px);
+  }
+
+  .composition-workspace .viewport-camera-settings,
+  .viewport-chem-search {
+    right: 10px;
+    width: calc(100% - 20px);
+    max-width: calc(100% - 20px);
+  }
+
+  .viewport-chem-search {
+    top: 62px;
+  }
+
+  .viewport-chem-search .molecule-builder,
+  .viewport-chem-search .builder-results {
+    grid-template-columns: 1fr;
+  }
+
+  .chem-lab-under-viewport {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-search-suggestions {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-search-suggestions .chemistry-chip-row {
+    justify-content: flex-start;
+  }
+
+  .chem-segmented-control {
+    width: 100%;
+  }
+
+  .chem-segmented-control button {
+    flex: 1;
+  }
 }

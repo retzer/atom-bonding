@@ -61,6 +61,7 @@ export const bondKindLabel: Record<BondKind, string> = {
   "polar-covalent": "Polar covalent",
   ionic: "Ionic",
   metallic: "Metallic",
+  coordinate: "Coordinate",
   hydrogen: "Hydrogen bond",
   dispersion: "London dispersion"
 };

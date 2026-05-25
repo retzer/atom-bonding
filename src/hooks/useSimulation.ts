@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { atomData } from "../data/atoms";
 import { moleculePresets, presetById } from "../data/presets";
-import type { AppMode, AtomParticle, AtomSymbol, Bond, BondEvent, ElectronEffect, LessonAnimationPart, LessonStep, MoleculePreset, SimulationSettings, SimulationState, ViewportAnnotation } from "../types";
+import type { AppMode, AtomParticle, AtomSymbol, Bond, BondEvent, ElectronEffect, LessonAnimationPart, LessonStep, MechanismGesture, MoleculePreset, ReactionAction, ReactionHistoryEntry, ReactionPreview, ReactionStep, SimulationSettings, SimulationState, ViewportAnnotation } from "../types";
 import { classifyBond, eventForBond, makeBond } from "../simulation/chemistry";
 import { createAtom, createFreeState, createPresetState, createSpawnedAtoms, stepSimulation } from "../simulation/engine";
+import { cloneState, commitDirectReaction, commitMechanism, deriveElectronSources, deriveElectronTargets, nextBondOrderAction, previewDirectReaction, previewMechanism } from "../simulation/electronMechanism";
+import { applyAtomIsotopeEdit, hydrateAtomIsotope } from "../simulation/isotopes";
+import { planReactionTimeJump } from "../simulation/reactionHistory";
 
 const defaultSize = { width: 920, height: 640 };
+const REACTION_HISTORY_LIMIT = 48;
+const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 type GlucoseAnomer = "alpha" | "beta";
 type GlucoseStage = "idle" | "aldehyde" | "hemiacetal" | "ring";
 
@@ -18,6 +23,13 @@ export const defaultSettings: SimulationSettings = {
   temperature: 0.78,
   atomCount: 1,
   speed: 1,
+  timeMultiplier: 1,
+  timeDisplayMode: "clock",
+  decayEnabled: true,
+  showDecayEffects: true,
+  showIsotopeLabels: true,
+  geigerAudioEnabled: true,
+  decayTeachingAcceleration: 1,
   collisionStrength: 0.72,
   electronegativityEmphasis: 1,
   bondingDistance: 2.05,
@@ -34,6 +46,7 @@ export const defaultSettings: SimulationSettings = {
   showShells: true,
   shellOpacity2D: 0.62,
   shellSpacing2D: 0.3,
+  spdfLabelScale2D: 1,
   valenceShellOnly2D: false,
   atomicModel2D: "bohr",
   electronColor2D: "#14b8a6",
@@ -44,7 +57,9 @@ export const defaultSettings: SimulationSettings = {
   showLabels: true,
   showElementNames2D: true,
   displayMode: "full",
+  renderStyle3D: "ball-stick",
   analysisMode: "chemistry",
+  chemistryDepth: "bridge",
   showElectronRegions: false,
   showBondTypes: true,
   showBondDipoles: true,
@@ -52,8 +67,12 @@ export const defaultSettings: SimulationSettings = {
   showCharges: true,
   showFunctionalGroups: false,
   focusMode: false,
+  showOffscreenLabels: false,
   showElectronFlow: true,
   highlightLonePairs: true,
+  reactionToolMode: "beginner",
+  directReactionMode: true,
+  showMechanismHandles: true,
   geometryAssist: true,
    geometry3D: false,
    geometryMode: "rigid",
@@ -79,6 +98,12 @@ export function useSimulation() {
   const [lessonTotalSteps, setLessonTotalSteps] = useState<number>(0);
   const [animParts, setAnimParts] = useState<LessonAnimationPart[]>([]);
   const [revealedCount, setRevealedCount] = useState(0);
+  const [reactionPreview, setReactionPreview] = useState<ReactionPreview | null>(null);
+  const [reactionSteps, setReactionSteps] = useState<ReactionStep[]>([]);
+  const [reactionPast, setReactionPast] = useState<ReactionHistoryEntry[]>([]);
+  const [reactionFuture, setReactionFuture] = useState<ReactionHistoryEntry[]>([]);
+  const [selectedElectronSourceId, setSelectedElectronSourceId] = useState<string | null>(null);
+  const [selectedElectronTargetId, setSelectedElectronTargetId] = useState<string | null>(null);
   const [state, setState] = useState<SimulationState>(() => createFreeState(defaultSize.width, defaultSize.height, defaultSettings));
   const frame = useRef<number | null>(null);
   const lastTime = useRef<number | null>(null);
@@ -96,6 +121,10 @@ export function useSimulation() {
     clearGlucoseStageTimers();
     setActivePreset(null);
     setGlucoseStage("idle");
+    setReactionPreview(null);
+    setReactionSteps([]);
+    setReactionPast([]);
+    setReactionFuture([]);
     setState(createFreeState(size.width, size.height, nextSettings));
   }, [clearGlucoseStageTimers, settings, size.height, size.width]);
 
@@ -105,6 +134,10 @@ export function useSimulation() {
     setMode("free");
     setActivePreset(null);
     setGlucoseStage("idle");
+    setReactionPreview(null);
+    setReactionSteps([]);
+    setReactionPast([]);
+    setReactionFuture([]);
     setState((current) => {
       const base = current.metallicLattice ? createFreeState(size.width, size.height, settings) : current;
       return {
@@ -129,14 +162,18 @@ export function useSimulation() {
     setIsRunning(true);
   }, [clearGlucoseStageTimers, settings, size.height, size.width]);
 
-  const spawnAtom = useCallback((symbol: AtomSymbol) => {
+  const spawnAtom = useCallback((symbol: AtomSymbol, nextMode: AppMode = "free") => {
     const nextSettings = { ...settings, selectedElements: [symbol] };
     const spawned = createSpawnedAtoms(size.width, size.height, nextSettings, 1);
     clearGlucoseStageTimers();
     setSettings((current) => ({ ...current, selectedElements: [symbol] }));
-    setMode("free");
+    setMode(nextMode);
     setActivePreset(null);
     setGlucoseStage("idle");
+    setReactionPreview(null);
+    setReactionSteps([]);
+    setReactionPast([]);
+    setReactionFuture([]);
     setLessonAnnotations([]);
     setHighlightedAtomIds([]);
     setHighlightedBondIds([]);
@@ -158,18 +195,24 @@ export function useSimulation() {
           id: `spawn-${symbol}-${Date.now()}`,
           time: base.time,
           title: `${atomData[symbol].name} atom added`,
-          plain: `${atomData[symbol].name} was added to the free simulation space.`,
-          science: "The atom now follows the live collision, valence, and electronegativity rules."
+          plain: `${atomData[symbol].name} was added to the ${nextMode === "composition" ? "Chemistry Lab workspace" : "free simulation space"}.`,
+          science: nextMode === "composition"
+            ? "The atom is now part of the editable molecule graph for inspection, bonding, and reaction previews."
+            : "The atom now follows the live collision, valence, and electronegativity rules."
         }, ...base.events].slice(0, 8)
       };
     });
-    setIsRunning(true);
+    setIsRunning(nextMode !== "composition");
   }, [clearGlucoseStageTimers, settings, size.height, size.width]);
 
   const loadPreset = useCallback((presetId: string, nextMode: AppMode = "presets") => {
     const preset = presetById[presetId] ?? moleculePresets[0];
     clearGlucoseStageTimers();
     clearLessonAtoms();
+    setReactionPreview(null);
+    setReactionSteps([]);
+    setReactionPast([]);
+    setReactionFuture([]);
     setMode(nextMode);
     setActivePreset(preset);
     setGlucoseStage(preset.id === "glucose-linear" ? "aldehyde" : isGlucoseRingPreset(preset.id) ? "ring" : "idle");
@@ -184,6 +227,10 @@ export function useSimulation() {
 
   const loadMoleculePreset = useCallback((preset: MoleculePreset, nextMode: AppMode = "presets") => {
     clearGlucoseStageTimers();
+    setReactionPreview(null);
+    setReactionSteps([]);
+    setReactionPast([]);
+    setReactionFuture([]);
     setMode(nextMode);
     setActivePreset(preset);
     setGlucoseStage(preset.id === "glucose-linear" ? "aldehyde" : isGlucoseRingPreset(preset.id) ? "ring" : "idle");
@@ -200,7 +247,7 @@ export function useSimulation() {
     try {
       const payload = JSON.parse(decodeURIComponent(escape(window.atob(match[1])))) as {
         settings?: Partial<SimulationSettings>;
-        atoms?: Array<Pick<AtomParticle, "id" | "symbol" | "x" | "y" | "z" | "vx" | "vy" | "vz" | "radius" | "charge" | "bonds">>;
+        atoms?: Array<Pick<AtomParticle, "id" | "symbol" | "x" | "y" | "z" | "vx" | "vy" | "vz" | "radius" | "charge" | "bonds" | "protonCount" | "neutronCount" | "massNumber" | "isotopeId">>;
       };
       if (payload.settings) {
         setSettings((current) => ({ ...current, ...payload.settings, atomCount: 1 }));
@@ -208,10 +255,14 @@ export function useSimulation() {
       if (payload.atoms?.length) {
         setMode("free");
         setActivePreset(null);
+        setReactionPreview(null);
+        setReactionSteps([]);
+        setReactionPast([]);
+        setReactionFuture([]);
         setState((current) => ({
           ...createFreeState(size.width, size.height, settings),
           time: current.time,
-          atoms: payload.atoms!.map((atom) => ({ ...atom, bonds: [], guided: false })),
+          atoms: payload.atoms!.map((atom) => hydrateAtomIsotope({ ...atom, bonds: [], guided: false }, current.time)),
           events: [{
             id: `shared-${Date.now()}`,
             time: current.time,
@@ -228,7 +279,10 @@ export function useSimulation() {
 
   useEffect(() => {
     if (activePreset) {
-      setState(createPresetState(size.width, size.height, activePreset));
+      setState((current) => ({
+        ...createPresetState(size.width, size.height, activePreset),
+        time: current.time
+      }));
     }
   }, [size.height, size.width]);
 
@@ -257,12 +311,20 @@ export function useSimulation() {
         next.relaxationStrength = value === "rigid" ? 1.2 : 0.72;
         next.geometryAssist = true;
       }
+      if (key === "timeMultiplier") {
+        next.timeMultiplier = clampNumber(Number(value), 1, 1000);
+      }
+      if (key === "decayTeachingAcceleration") {
+        next.decayTeachingAcceleration = clampNumber(Number(value), 1, 1000);
+      }
       return next;
     });
   };
 
   const setCanvasSize = useCallback((width: number, height: number) => {
-    setSize({ width: Math.max(420, width), height: Math.max(420, height) });
+    const nextWidth = Math.max(420, Math.round(width));
+    const nextHeight = Math.max(420, Math.round(height));
+    setSize((current) => current.width === nextWidth && current.height === nextHeight ? current : { width: nextWidth, height: nextHeight });
   }, []);
 
   const selectAtom = useCallback((atomId: string | null) => {
@@ -271,6 +333,152 @@ export function useSimulation() {
 
   const selectBond = useCallback((bondId: string | null) => {
     setState((current) => ({ ...current, selectedBondId: bondId, selectedAtomId: null }));
+  }, []);
+
+  const electronSources = useMemo(() => deriveElectronSources(state), [state]);
+  const electronTargets = useMemo(() => deriveElectronTargets(state), [state]);
+  const selectedElectronSource = useMemo(
+    () => electronSources.find((source) => source.id === selectedElectronSourceId) ?? null,
+    [electronSources, selectedElectronSourceId]
+  );
+  const selectedElectronTarget = useMemo(
+    () => electronTargets.find((target) => target.id === selectedElectronTargetId) ?? null,
+    [electronTargets, selectedElectronTargetId]
+  );
+
+  const previewReactionAction = useCallback((action: ReactionAction) => {
+    setReactionPreview(previewDirectReaction(state, settings, action));
+  }, [settings, state]);
+
+  const clearReactionPreview = useCallback(() => {
+    setReactionPreview(null);
+    setSelectedElectronTargetId(null);
+  }, []);
+
+  const commitReactionAction = useCallback((action: ReactionAction) => {
+    const result = commitDirectReaction(state, settings, action);
+    if (!result) {
+      setReactionPreview(previewDirectReaction(state, settings, action));
+      return;
+    }
+    setState(result.state);
+    setReactionSteps((current) => [result.step, ...current].slice(0, REACTION_HISTORY_LIMIT));
+    setReactionPast((current) => [result.historyEntry, ...current].slice(0, REACTION_HISTORY_LIMIT));
+    setReactionFuture([]);
+    setActivePreset(null);
+    setReactionPreview(result.preview);
+  }, [settings, state]);
+
+  const previewMechanismGesture = useCallback((gesture: MechanismGesture) => {
+    setSelectedElectronSourceId(gesture.sourceId);
+    setSelectedElectronTargetId(gesture.targetId);
+    setReactionPreview(previewMechanism(state, settings, gesture));
+  }, [settings, state]);
+
+  const commitMechanismGesture = useCallback((gesture: MechanismGesture) => {
+    setSelectedElectronSourceId(gesture.sourceId);
+    setSelectedElectronTargetId(gesture.targetId);
+    const result = commitMechanism(state, settings, gesture);
+    if (!result) {
+      setReactionPreview(previewMechanism(state, settings, gesture));
+      return;
+    }
+    setState(result.state);
+    setReactionSteps((current) => [result.step, ...current].slice(0, REACTION_HISTORY_LIMIT));
+    setReactionPast((current) => [result.historyEntry, ...current].slice(0, REACTION_HISTORY_LIMIT));
+    setReactionFuture([]);
+    setActivePreset(null);
+    setReactionPreview(result.preview);
+  }, [settings, state]);
+
+  const previewBondOrderShortcut = useCallback((bondId: string, requestedOrder: 1 | 2 | 3) => {
+    const bond = state.bonds.find((item) => item.id === bondId);
+    if (!bond) return;
+    const action = nextBondOrderAction(bond, requestedOrder);
+    if (action) setReactionPreview(previewDirectReaction(state, settings, action));
+  }, [settings, state]);
+
+  const undoReactionStep = useCallback(() => {
+    setReactionPast((current) => {
+      const [entry, ...rest] = current;
+      if (!entry) return current;
+      setReactionFuture((future) => [entry, ...future].slice(0, REACTION_HISTORY_LIMIT));
+      setReactionSteps((steps) => steps.filter((step) => step.id !== entry.step.id));
+      setReactionPreview(null);
+      setState(cloneState(entry.before));
+      return rest;
+    });
+  }, []);
+
+  const redoReactionStep = useCallback(() => {
+    setReactionFuture((current) => {
+      const [entry, ...rest] = current;
+      if (!entry) return current;
+      setReactionPast((past) => [entry, ...past].slice(0, REACTION_HISTORY_LIMIT));
+      setReactionSteps((steps) => [entry.step, ...steps.filter((step) => step.id !== entry.step.id)].slice(0, REACTION_HISTORY_LIMIT));
+      setReactionPreview(null);
+      setState(cloneState(entry.after));
+      return rest;
+    });
+  }, []);
+
+  const jumpToReactionTime = useCallback((targetId: string | "start") => {
+    const jump = planReactionTimeJump(reactionPast, reactionFuture, targetId, REACTION_HISTORY_LIMIT);
+    if (!jump) return;
+    setReactionPast(jump.past);
+    setReactionFuture(jump.future);
+    setReactionSteps(jump.activeSteps);
+    setReactionPreview(null);
+    setState(cloneState(jump.state));
+  }, [reactionFuture, reactionPast]);
+
+  const deleteAtom = useCallback((atomId: string) => {
+    setState((current) => {
+      const removed = current.atoms.find((atom) => atom.id === atomId);
+      if (!removed) return current;
+
+      const removedBondIds = new Set(current.bonds.filter((bond) => bond.a === atomId || bond.b === atomId).map((bond) => bond.id));
+      const remainingBonds = current.bonds.filter((bond) => !removedBondIds.has(bond.id));
+      const remainingBondIdsByAtom = new Map<string, string[]>();
+      for (const bond of remainingBonds) {
+        remainingBondIdsByAtom.set(bond.a, [...(remainingBondIdsByAtom.get(bond.a) ?? []), bond.id]);
+        remainingBondIdsByAtom.set(bond.b, [...(remainingBondIdsByAtom.get(bond.b) ?? []), bond.id]);
+      }
+
+      return {
+        ...current,
+        atoms: current.atoms
+          .filter((atom) => atom.id !== atomId)
+          .map((atom) => ({ ...atom, bonds: remainingBondIdsByAtom.get(atom.id) ?? [] })),
+        bonds: remainingBonds,
+        hydrogenBonds: current.hydrogenBonds.filter((bond) => bond.hydrogen !== atomId && bond.donor !== atomId && bond.acceptor !== atomId),
+        effects: current.effects.filter((effect) => effect.from !== atomId && effect.to !== atomId),
+        selectedAtomId: current.selectedAtomId === atomId ? null : current.selectedAtomId,
+        selectedBondId: removedBondIds.has(current.selectedBondId ?? "") ? null : current.selectedBondId,
+        events: [{
+          id: `delete-${atomId}-${Date.now()}`,
+          time: current.time,
+          title: `${atomData[removed.symbol].name} atom removed`,
+          plain: `${atomData[removed.symbol].name} was removed from the viewport.`,
+          science: "Any bonds, hydrogen bonds, and electron-transfer effects connected to the removed atom were cleared from the scene."
+        }, ...current.events].slice(0, 8)
+      };
+    });
+  }, []);
+
+  const editAtomIsotope = useCallback((atomId: string, isotopeId: string) => {
+    setActivePreset(null);
+    setState((current) => applyAtomIsotopeEdit(current, atomId, "isotope", isotopeId));
+  }, []);
+
+  const editAtomNeutrons = useCallback((atomId: string, neutronCount: number) => {
+    setActivePreset(null);
+    setState((current) => applyAtomIsotopeEdit(current, atomId, "neutrons", neutronCount));
+  }, []);
+
+  const editAtomProtons = useCallback((atomId: string, protonCount: number) => {
+    setActivePreset(null);
+    setState((current) => applyAtomIsotopeEdit(current, atomId, "protons", protonCount));
   }, []);
 
   const moveAtom = useCallback((atomId: string, x: number, y: number) => {
@@ -579,6 +787,7 @@ export function useSimulation() {
         showShells: settings.showShells,
         shellOpacity2D: settings.shellOpacity2D,
         shellSpacing2D: settings.shellSpacing2D,
+        spdfLabelScale2D: settings.spdfLabelScale2D,
         valenceShellOnly2D: settings.valenceShellOnly2D,
         atomicModel2D: settings.atomicModel2D,
         electronColor2D: settings.electronColor2D,
@@ -590,6 +799,7 @@ export function useSimulation() {
         showElementNames2D: settings.showElementNames2D,
         displayMode: settings.displayMode,
         analysisMode: settings.analysisMode,
+        chemistryDepth: settings.chemistryDepth,
         showElectronRegions: settings.showElectronRegions,
         showBondTypes: settings.showBondTypes,
         showBondDipoles: settings.showBondDipoles,
@@ -597,11 +807,19 @@ export function useSimulation() {
         showCharges: settings.showCharges,
         showFunctionalGroups: settings.showFunctionalGroups,
         focusMode: settings.focusMode,
+        showOffscreenLabels: settings.showOffscreenLabels,
         showElectronFlow: settings.showElectronFlow,
         highlightLonePairs: settings.highlightLonePairs,
         geometryAssist: settings.geometryAssist,
         geometry3D: settings.geometry3D,
         geometryMode: settings.geometryMode,
+        renderStyle3D: settings.renderStyle3D,
+        timeMultiplier: settings.timeMultiplier,
+        decayEnabled: settings.decayEnabled,
+        showDecayEffects: settings.showDecayEffects,
+        showIsotopeLabels: settings.showIsotopeLabels,
+        geigerAudioEnabled: settings.geigerAudioEnabled,
+        decayTeachingAcceleration: settings.decayTeachingAcceleration,
         relaxationStrength: settings.relaxationStrength,
         selectedElements: settings.selectedElements,
         zoom: settings.zoom
@@ -617,6 +835,10 @@ export function useSimulation() {
         vz: 0,
         radius: atom.radius,
         charge: atom.charge,
+        protonCount: atom.protonCount,
+        neutronCount: atom.neutronCount,
+        massNumber: atom.massNumber,
+        isotopeId: atom.isotopeId,
         bonds: []
       }))
     };
@@ -671,11 +893,36 @@ export function useSimulation() {
     reset,
     selectAtom,
     selectBond,
+    previewReactionAction,
+    commitReactionAction,
+    previewMechanismGesture,
+    commitMechanismGesture,
+    previewBondOrderShortcut,
+    undoReactionStep,
+    redoReactionStep,
+    jumpToReactionTime,
+    clearReactionPreview,
     moveAtom,
+    deleteAtom,
+    editAtomIsotope,
+    editAtomNeutrons,
+    editAtomProtons,
     flingAtom,
     lessonAnnotations,
     highlightedAtomIds,
     highlightedBondIds,
+    reactionPreview,
+    reactionSteps,
+    reactionPast,
+    reactionFuture,
+    electronSources,
+    electronTargets,
+    selectedElectronSource,
+    selectedElectronTarget,
+    selectedElectronSourceId,
+    selectedElectronTargetId,
+    setSelectedElectronSourceId,
+    setSelectedElectronTargetId,
     currentStepIndex,
     lessonStepText,
     lessonStepIndex,

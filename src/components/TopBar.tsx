@@ -1,4 +1,4 @@
-import { Atom, HelpCircle, Moon, Pause, Play, RotateCcw, Sparkles, Sun } from "lucide-react";
+import { Atom, Gauge, HelpCircle, Moon, Pause, Play, RotateCcw, Sparkles, Sun } from "lucide-react";
 import type { AppMode, ThemeMode } from "../types";
 
 type Props = {
@@ -6,14 +6,23 @@ type Props = {
   theme: ThemeMode;
   running: boolean;
   showGraphics: boolean;
+  timeMultiplier: number;
   onMode: (mode: AppMode) => void;
   onTheme: () => void;
   onToggleRun: () => void;
   onReset: () => void;
   onToggleGraphics: () => void;
+  onTimeMultiplier: (value: number) => void;
 };
 
-export function TopBar({ mode, theme, running, showGraphics, onMode, onTheme, onToggleRun, onReset, onToggleGraphics }: Props) {
+export function TopBar({ mode, theme, running, showGraphics, timeMultiplier, onMode, onTheme, onToggleRun, onReset, onToggleGraphics, onTimeMultiplier }: Props) {
+  const labels: Record<AppMode, string> = {
+    free: "Free Simulation",
+    guided: "Guided Learning",
+    presets: "Preset Molecules",
+    composition: "Chemistry Lab"
+  };
+
   return (
     <header className="top-bar">
       <div className="brand">
@@ -24,14 +33,43 @@ export function TopBar({ mode, theme, running, showGraphics, onMode, onTheme, on
         </div>
       </div>
       <nav className="mode-tabs" aria-label="Simulation mode">
-        {(["free", "guided", "presets"] as AppMode[]).map((item) => (
+        {(["free", "guided", "presets", "composition"] as AppMode[]).map((item) => (
           <button key={item} className={mode === item ? "active" : ""} onClick={() => onMode(item)}>
-            {item === "free" ? "Free Simulation" : item === "guided" ? "Guided Learning" : "Preset Molecules"}
+            {labels[item]}
           </button>
         ))}
       </nav>
       <div className="top-actions">
-        <button className={`label-button ${showGraphics ? "active" : ""}`} title="Toggle visual settings: quality, overlays, analysis modes, lighting" onClick={onToggleGraphics}>
+        <div className="time-control" title="Global simulation time multiplier">
+          <div className="time-control-label">
+            <Gauge size={15} />
+            <span>Time</span>
+            <strong>{Math.round(timeMultiplier)}x</strong>
+          </div>
+          <div className="time-preset-row" aria-label="Time multiplier presets">
+            {[1, 10, 100, 1000].map((value) => (
+              <button key={value} className={Math.round(timeMultiplier) === value ? "active" : ""} onClick={() => onTimeMultiplier(value)}>
+                {value}x
+              </button>
+            ))}
+          </div>
+          <input
+            aria-label="Time multiplier"
+            type="range"
+            min={1}
+            max={1000}
+            step={1}
+            value={timeMultiplier}
+            onChange={(event) => onTimeMultiplier(Number(event.target.value))}
+          />
+        </div>
+        <button
+          className={`label-button visuals-toggle-button ${showGraphics ? "active" : ""}`}
+          title="Toggle visual settings: quality, overlays, analysis modes, lighting"
+          aria-haspopup="dialog"
+          aria-expanded={showGraphics}
+          onClick={onToggleGraphics}
+        >
           <Sparkles size={16} />
           <span>Visuals</span>
         </button>

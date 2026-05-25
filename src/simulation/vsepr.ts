@@ -67,6 +67,6 @@ export function estimateLonePairs(atom: AtomParticle, bonds: Bond[]) {
   const data = atomData[atom.symbol];
   if (atom.symbol === "H" || data.metal || data.nobleGas) return 0;
   const electronBudget = data.valenceElectrons - Math.max(0, atom.charge) + Math.max(0, -atom.charge);
-  const bondOrder = bonds.reduce((sum, bond) => sum + (bond.kind === "ionic" ? 1 : bond.order), 0);
+  const bondOrder = bonds.reduce((sum, bond) => sum + (bond.kind === "ionic" || bond.kind === "coordinate" ? 1 : bond.order), 0);
   return Math.max(0, Math.min(3, Math.round((electronBudget - bondOrder) / 2)));
 }

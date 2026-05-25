@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Activity, ChevronDown, CircleHelp, ListChecks, Orbit, Share2, SlidersHorizontal, Waves } from "lucide-react";
+import { Activity, ChevronDown, CircleHelp, ListChecks, MousePointer2, Orbit, Share2, SlidersHorizontal, Trash2, Waves, ZoomIn } from "lucide-react";
 import type { CSSProperties } from "react";
 import { atomData } from "../data/atoms";
 import type { AtomParticle, AtomSymbol, Bond, BondEvent, HydrogenBond, MoleculePreset, SimulationSettings } from "../types";
@@ -31,6 +31,14 @@ export function ControlDock({ settings, atoms, bonds, hydrogenBonds, events, act
         <SlidersHorizontal size={18} />
         <h2>Controls</h2>
       </div>
+      <div className="control-section viewport-controls-section">
+        <div className="control-section-title">Viewport controls</div>
+        <div className="viewport-controls-list">
+          <span><MousePointer2 size={14} />Click / drag<strong>Select or move</strong></span>
+          <span><Trash2 size={14} />Double-click atom<strong>Delete</strong></span>
+          <span><ZoomIn size={14} />Mouse wheel<strong>Zoom</strong></span>
+        </div>
+      </div>
       <div className="control-section">
         <div className="control-section-title">Physics</div>
         <div className="control-grid compact-grid">
@@ -50,6 +58,22 @@ export function ControlDock({ settings, atoms, bonds, hydrogenBonds, events, act
             <Waves size={15} />
             Flexible
           </button>
+        </div>
+      </div>
+      <div className="control-section">
+        <div className="control-section-title">Nuclear time</div>
+        <div className="projection-row" aria-label="Isotope decay settings">
+          <button className={settings.decayEnabled ? "visual-choice active" : "visual-choice"} title="Let unstable isotopes decay according to scaled simulation time" onClick={() => onSetting("decayEnabled", !settings.decayEnabled)}>
+            <Activity size={15} />
+            Decay
+          </button>
+          <button className={settings.geigerAudioEnabled ? "visual-choice active" : "visual-choice"} title="Play soft Geiger ticks for selected radioactive isotopes" onClick={() => onSetting("geigerAudioEnabled", !settings.geigerAudioEnabled)}>
+            <Waves size={15} />
+            Geiger audio
+          </button>
+        </div>
+        <div className="control-grid compact-grid">
+          <Slider label="Teaching decay" title="Optional classroom accelerator for isotope decay; physical timing stays at 1x." value={settings.decayTeachingAcceleration} min={1} max={1000} step={1} onChange={(value) => onSetting("decayTeachingAcceleration", value)} />
         </div>
       </div>
       <div className="control-section">

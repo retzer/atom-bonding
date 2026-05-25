@@ -86,9 +86,32 @@ export function GraphicsPanel({ settings, onSetting, onClose }: Props) {
         </div>
       </div>
 
+      <div className="graphics-section">
+        <div className="graphics-section-title">Nuclear Model</div>
+        <div className="graphics-toggle-grid">
+          <ToggleButton label="Decay clock" active={settings.decayEnabled} icon={<Sparkles size={16} />} offIcon={<EyeOff size={16} />} onClick={() => onSetting("decayEnabled", !settings.decayEnabled)} />
+          <ToggleButton label="Geiger audio" active={settings.geigerAudioEnabled} icon={<Waves size={16} />} offIcon={<EyeOff size={16} />} onClick={() => onSetting("geigerAudioEnabled", !settings.geigerAudioEnabled)} />
+        </div>
+        <div className="graphics-slider-grid" aria-label="Nuclear timing controls">
+          <GraphicsSlider label="Teaching decay" title="Optional classroom acceleration for isotope decay. Keep at 1x for physical timing." value={settings.decayTeachingAcceleration} min={1} max={1000} step={1} onChange={(value) => onSetting("decayTeachingAcceleration", value)} />
+        </div>
+      </div>
+
       {settings.geometry3D && (
         <div className="graphics-section">
           <div className="graphics-section-title">3D View</div>
+          <div className="graphics-row" aria-label="3D render style">
+            {([
+              ["ball-stick", "Ball + stick", "Show shaded atom spheres with 3D bond cylinders."],
+              ["stick", "Stick", "Emphasize bonds and reduce atom spheres for clearer large structures."],
+              ["wireframe", "Wireframe", "Use thin structural lines with minimal atom centers."]
+            ] as const).map(([style, label, title]) => (
+              <button key={style} className={settings.renderStyle3D === style ? "graphics-choice active" : "graphics-choice"} title={title} onClick={() => onSetting("renderStyle3D", style)}>
+                <Box size={15} />
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="graphics-row" aria-label="3D camera presets">
             {(["free", "isometric", "top", "side"] as const).map((preset) => (
               <button key={preset} className={settings.cameraPreset === preset ? "graphics-choice active" : "graphics-choice"} title={`Use ${preset} camera view`} onClick={() => onSetting("cameraPreset", preset)}>
@@ -122,13 +145,17 @@ export function GraphicsPanel({ settings, onSetting, onClose }: Props) {
           <ToggleButton label="Advanced" active={settings.advanced} icon={<Gauge size={16} />} onClick={() => onSetting("advanced", !settings.advanced)} />
           <ToggleButton label="Regions" active={settings.showElectronRegions} icon={<Waves size={16} />} onClick={() => onSetting("showElectronRegions", !settings.showElectronRegions)} />
           <ToggleButton label="Bond types" active={settings.showBondTypes} icon={<Tags size={16} />} onClick={() => onSetting("showBondTypes", !settings.showBondTypes)} />
+          <ToggleButton label="Offscreen labels" active={settings.showOffscreenLabels} icon={<Tags size={16} />} onClick={() => onSetting("showOffscreenLabels", !settings.showOffscreenLabels)} />
           <ToggleButton label="Lone pairs" active={settings.highlightLonePairs} icon={<Lightbulb size={16} />} onClick={() => onSetting("highlightLonePairs", !settings.highlightLonePairs)} />
           <ToggleButton label="Bond dipoles" active={settings.showBondDipoles} icon={<Zap size={16} />} onClick={() => onSetting("showBondDipoles", !settings.showBondDipoles)} />
           <ToggleButton label="Net dipole" active={settings.showNetDipole} icon={<Zap size={16} />} onClick={() => onSetting("showNetDipole", !settings.showNetDipole)} />
           <ToggleButton label="Charges" active={settings.showCharges} icon={<Tags size={16} />} onClick={() => onSetting("showCharges", !settings.showCharges)} />
+          <ToggleButton label="Isotope labels" active={settings.showIsotopeLabels} icon={<Tags size={16} />} offIcon={<EyeOff size={16} />} onClick={() => onSetting("showIsotopeLabels", !settings.showIsotopeLabels)} />
+          <ToggleButton label="Decay pulses" active={settings.showDecayEffects} icon={<Sparkles size={16} />} offIcon={<EyeOff size={16} />} onClick={() => onSetting("showDecayEffects", !settings.showDecayEffects)} />
           <ToggleButton label="Groups" active={settings.showFunctionalGroups} icon={<Tags size={16} />} onClick={() => onSetting("showFunctionalGroups", !settings.showFunctionalGroups)} />
           <ToggleButton label="Focus" active={settings.focusMode} icon={<Focus size={16} />} onClick={() => onSetting("focusMode", !settings.focusMode)} />
-          <ToggleButton label="Flow" active={settings.showElectronFlow} icon={<Sparkles size={16} />} onClick={() => onSetting("showElectronFlow", !settings.showElectronFlow)} />
+          <ToggleButton label="Electron flow" active={settings.showElectronFlow} icon={<Sparkles size={16} />} onClick={() => onSetting("showElectronFlow", !settings.showElectronFlow)} />
+          <ToggleButton label="Electron handles" active={settings.showMechanismHandles} icon={<MousePointer2 size={16} />} onClick={() => onSetting("showMechanismHandles", !settings.showMechanismHandles)} />
           <ToggleButton label="Geometry" active={settings.geometryAssist} icon={<Orbit size={16} />} onClick={() => onSetting("geometryAssist", !settings.geometryAssist)} />
           <button className="graphics-toggle" title="Reset zoom to the default view" onClick={() => onSetting("zoom", 1)}>
             <ZoomIn size={16} />
@@ -157,6 +184,9 @@ export function GraphicsPanel({ settings, onSetting, onClose }: Props) {
           <div className="graphics-slider-grid" aria-label="2D electron controls">
             <GraphicsSlider label="2D expansion" title="Increase visible spacing between bonded atoms in 2D without changing the chemistry." value={settings.expansionScale2D} min={1} max={3.2} step={0.05} onChange={(value) => onSetting("expansionScale2D", value)} />
             <GraphicsSlider label="Shell spacing" title="Expand or compress the distance between electron shells in 2D." value={settings.shellSpacing2D} min={0} max={1} step={0.02} format="percent" onChange={(value) => onSetting("shellSpacing2D", value)} />
+            {settings.atomicModel2D === "spdf" && (
+              <GraphicsSlider label="SPDF label size" title="Change only the SPDF shell label font size." value={settings.spdfLabelScale2D} min={0.75} max={2.4} step={0.05} onChange={(value) => onSetting("spdfLabelScale2D", value)} />
+            )}
             <GraphicsSlider label="Shell opacity" title="Change only the opacity of electron shell rings in 2D." value={settings.shellOpacity2D} min={0.08} max={1} step={0.02} onChange={(value) => onSetting("shellOpacity2D", value)} />
             <GraphicsSlider label="Electron opacity" title="Change the opacity of 2D electron particles and trails." value={settings.electronOpacity2D} min={0.12} max={1} step={0.02} onChange={(value) => onSetting("electronOpacity2D", value)} />
             <label className="graphics-slider color-slider" title="Change the color of 2D electrons.">

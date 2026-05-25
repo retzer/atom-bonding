@@ -3781,7 +3781,7 @@ export const periodicElements = [
     "name": "Lawrencium",
     "atomicMass": "266.120",
     "cpkHexColor": "#C70066",
-    "electronConfiguration": "[Rn]7s2 5f14 6d1",
+    "electronConfiguration": "[Rn]5f14 7s2 7p1",
     "electronegativity": 1.3,
     "atomicRadius": null,
     "ionizationEnergy": null,
@@ -3806,10 +3806,10 @@ export const periodicElements = [
       18,
       32,
       32,
-      9,
-      2
+      8,
+      3
     ],
-    "valenceElectrons": 2,
+    "valenceElectrons": 3,
     "color": "#fb7185"
   },
   {
