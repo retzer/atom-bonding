@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/atomstudio-logo-white.png" alt="AtomStudio" width="720">
+</p>
+
 # Atom Bonding Studio
 
 Atom Bonding Studio is an interactive chemistry simulator and learning workspace built with React 19, Vite 6, TypeScript, and Tailwind CSS. It combines a 2D bonding playground, 3D molecular visualization, a guided curriculum, a complete periodic table, PubChem import, cache-first AI chemistry notes, isotope-aware nuclear behavior, and a developing electron-first reaction system called **The Electron Engine**.
@@ -160,4 +164,4 @@ For Vercel:
 
 ## License
 
-No license has been selected yet. Add a license before broad public reuse.
+MIT License. See [LICENSE](LICENSE).

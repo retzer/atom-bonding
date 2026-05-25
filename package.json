@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Interactive chemistry simulator with guided learning, molecule analysis, isotope-aware time, and The Electron Engine.",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/retzer/atom-bonding.git"
